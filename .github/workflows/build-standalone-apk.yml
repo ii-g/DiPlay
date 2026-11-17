@@ -1,0 +1,48 @@
+name: Standalone test APK
+on:
+  push:
+    branches: [standalone-apk]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: standalone-apk
+      - name: Download 0.2.22 release APK for its bundled identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p /tmp/release-apk
+          gh release download v0.2.22 --repo shihabal3amri/DiPlay --pattern 'DiPlay-0.2.22.apk' --dir /tmp/release-apk
+          ls -la /tmp/release-apk
+      - name: Extract runtime identity assets
+        run: |
+          mkdir -p /tmp/runtime-assets/offline-mfi
+          cd /tmp/release-apk
+          unzip -o DiPlay-0.2.22.apk 'assets/offline-mfi/identity.pk8' 'assets/offline-mfi/certificate.p7b' -d /tmp/extracted
+          cp /tmp/extracted/assets/offline-mfi/identity.pk8 /tmp/extracted/assets/offline-mfi/certificate.p7b /tmp/runtime-assets/offline-mfi/
+          ls -la /tmp/runtime-assets/offline-mfi/
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools platforms;android-37.0 build-tools;36.0.0 ndk;28.2.13676358
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build standalone debug APK
+        env:
+          DIPLAY_AUTH_ASSETS_DIR: /tmp/runtime-assets
+        run: ./gradlew :mobile:assembleStandaloneDebug --stacktrace
+      - name: Verify identity inside the APK
+        run: unzip -l mobile/build/outputs/apk/debug/mobile-debug.apk | grep -E 'offline-mfi/(identity.pk8|certificate.p7b)'
+      - name: Upload test APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-debug-standalone
+          path: mobile/build/outputs/apk/debug/mobile-debug.apk
