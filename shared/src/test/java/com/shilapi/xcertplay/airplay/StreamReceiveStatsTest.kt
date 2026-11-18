@@ -120,4 +120,26 @@ class StreamReceiveStatsTest {
         assertEquals(1, output.size)
         assertTrue(output.single().contains("senderVsArrival arrivalGapMs=1600 senderGapMs=unknown readMs=1600"))
     }
+
+    @Test fun frameGapCountersAreKeptInTheWindowSummary() {
+        var clock = 0L
+        val output = mutableListOf<String>()
+        val stats = StreamReceiveStats("video", output::add) { clock }
+        fun frame(senderMs: Long, readMs: Long) {
+            stats.reading()
+            clock += readMs * 1_000_000L
+            stats.received(1_000)
+            stats.frameTiming(senderMs * 1_000_000L, clock)
+            stats.processed()
+        }
+        frame(senderMs = 1_000, readMs = 10)
+        frame(senderMs = 1_010, readMs = 10)
+        frame(senderMs = 1_026, readMs = 1_600) // arrival stalled 1600ms, sender kept sending
+        stats.flush(ended = true)
+        assertTrue(output.last().contains("frameGapMaxMs=1600 senderGapMaxMs=16 frameTimingCalls=3"))
+        // Counters reset per window, but gap continuity across the flush is kept.
+        frame(senderMs = 2_626, readMs = 10)
+        stats.flush(ended = true)
+        assertTrue(output.last().contains("frameGapMaxMs=10 senderGapMaxMs=1600 frameTimingCalls=1"))
+    }
 }

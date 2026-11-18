@@ -1,6 +1,7 @@
 package com.shilapi.xcertplay.airplay
 
 import android.util.Log
+import com.shilapi.xcertplay.orchestration.LiveSessionWatchdog
 import com.shilapi.xcertplay.transport.BlockingDuplexByteStream
 import java.io.Closeable
 import java.io.File
@@ -101,6 +102,31 @@ class CarPlayMediaEngine(
         }
     }
 
+    private val liveWatchdogScheduler by lazy {
+        ScheduledThreadPoolExecutor(1) { task -> Thread(task, "carplay-live-watchdog").apply { isDaemon = true } }.apply {
+            removeOnCancelPolicy = true
+            setKeepAliveTime(LIVE_WATCHDOG_SCHEDULER_IDLE_SECONDS, TimeUnit.SECONDS)
+            allowCoreThreadTimeOut(true)
+        }
+    }
+
+    /** The session the watchdog's log lines are routed to; null while no session is armed. */
+    @Volatile private var liveWatchdogSession: AirPlaySession? = null
+
+    // Detect + log only: no reconnect, no keyframe request, no tunnel keepalive. Armed on
+    // RECORD, disarmed on session close. Fed from frame arrivals (receive side, never
+    // displayed frames) and audio packet arrivals; see LiveSessionWatchdog.
+    private val liveSessionWatchdog = LiveSessionWatchdog(
+        schedule = { delayMs, action ->
+            val future = liveWatchdogScheduler.schedule({ action() }, delayMs, TimeUnit.MILLISECONDS)
+            val cancel: () -> Unit = { future.cancel(false); Unit }
+            cancel
+        },
+        log = { message ->
+            liveWatchdogSession?.logDebug(message) ?: Log.i(TAG, message)
+        },
+    )
+
     private class BufferedStream(val stream: BufferedAudioStream, val connectionId: Any?)
 
     /** The session whose last duck command started a navigation prompt. */
@@ -155,8 +181,19 @@ class CarPlayMediaEngine(
                 session.logDebug("Video recovery: requested keyframe sent=$sent")
             }
         }
+        val baseListener = currentScreenListener(type, sink, isCurrent = { streams[streamKey] === screen })
         val port = screen.listen(
-            object : ScreenStream.Listener by currentScreenListener(type, sink, isCurrent = { streams[streamKey] === screen }) {
+            object : ScreenStream.Listener by baseListener {
+                override fun onFrame(naluBytes: ByteArray, senderNanos: Long, arrivalNanos: Long) {
+                    // Receive-side arrival, never displayed frames: decoder output is deliberately
+                    // parked offscreen when there is no surface to show on, so shown==0 while
+                    // video still arrives. Only the main screen feeds the watchdog.
+                    if (type == STREAM_TYPE_MAIN_SCREEN && streams[streamKey] === screen) {
+                        liveSessionWatchdog.noteVideoFrame(session, arrivalNanos)
+                    }
+                    baseListener.onFrame(naluBytes, senderNanos, arrivalNanos)
+                }
+
                 override fun onClosed(cause: Throwable?) {
                     Log.w(
                         TAG,
@@ -229,6 +266,7 @@ class CarPlayMediaEngine(
                 }
 
                 override fun onRtp(rtp: ByteArray, sample: Int) {
+                    liveSessionWatchdog.noteAudioPacket(session, System.nanoTime())
                     meta.position.observeRtp(sample)
                     clockProbe.observe(sample, System.nanoTime())?.let { hz ->
                         session.logDebug(
@@ -296,8 +334,16 @@ class CarPlayMediaEngine(
             return null
         }
         val peer = session.remoteAddress ?: return null
+        // Buffered music (type 103) bypasses AudioStream, so its frames never reach onRtp:
+        // wrap the sink so fed frames still count as audio-alive for the live-session watchdog.
+        val audioNotingSink = object : MediaSink by sink {
+            override fun onAudioRtp(id: AudioStreamId, audioFormat: AudioFormat, rtp: ByteArray, sample: Int) {
+                liveSessionWatchdog.noteAudioPacket(session, System.nanoTime())
+                sink.onAudioRtp(id, audioFormat, rtp, sample)
+            }
+        }
         val buffered = try {
-            BufferedAudioStream(key, format, sink, session::logDebug, expectedPeer = peer)
+            BufferedAudioStream(key, format, audioNotingSink, session::logDebug, expectedPeer = peer)
         } catch (error: Exception) {
             Log.w(TAG, "buffered audio listener failed", error)
             return null
@@ -554,7 +600,14 @@ class CarPlayMediaEngine(
         sink.onAudioDuck(ducked)
     }
 
+    override fun onSessionActive(session: AirPlaySession) {
+        liveWatchdogSession = session
+        liveSessionWatchdog.arm(session) { session.lastControlActivityNanos }
+    }
+
     override fun onSessionClosed(session: AirPlaySession) {
+        liveSessionWatchdog.disarm(session)
+        if (liveWatchdogSession === session) liveWatchdogSession = null
         // A phone that disconnects during a prompt never sends unduckAudio.
         if (duckingSession.compareAndSet(session, null)) sink.onAudioDuck(false)
         clearPendingIapTunnel(session)
@@ -704,6 +757,7 @@ class CarPlayMediaEngine(
 
         private const val TAG = "xcertplay-usb"
         private const val MICROPHONE_SCHEDULER_IDLE_SECONDS = 5L
+        private const val LIVE_WATCHDOG_SCHEDULER_IDLE_SECONDS = 5L
         private const val STREAM_TYPE_MAIN_SCREEN = 110
         private const val STREAM_TYPE_ALT_SCREEN = 111
         private const val STREAM_TYPE_MAIN_AUDIO = 100

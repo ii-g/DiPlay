@@ -23,6 +23,12 @@ internal class StreamReceiveStats(
     private var lastReadNs = 0L
     private var lastSenderNanos = 0L
     private var lastFrameArrivalNs = 0L
+    // Window evidence for frameTiming: the per-gap line can be lost, but the 5s summary
+    // always reaches the report, so the max frame/sender gaps and the call count are kept
+    // here and printed by flush(). maxSenderGapNs is -1 until a known sender gap is seen.
+    private var frameTimingCalls = 0
+    private var maxFrameGapNs = 0L
+    private var maxSenderGapNs = -1L
     private var maxProcessNs = 0L
     private var lastTimestamp: Int? = null
     private var nextSequence: Int? = null
@@ -92,15 +98,22 @@ internal class StreamReceiveStats(
      * gap near one frame interval means the radio/receive path stalled. The scan age and
      * radio state at the gap come from [WifiScanEvents] and [VideoGapRadioState]. Logging
      * only; no behaviour changes. Deliberately independent of [FramePacer], which only
-     * consumes sender times for smooth video.
+     * consumes sender times for smooth video. Every call also records the window counters
+     * ([frameTimingCalls], [maxFrameGapNs], [maxSenderGapNs]) that [flush] prints, so the
+     * evidence survives even when a per-gap line never reaches the report.
      */
     fun frameTiming(senderNanos: Long, arrivalNanos: Long) {
         val prevSender = lastSenderNanos
         val prevArrival = lastFrameArrivalNs
         lastSenderNanos = senderNanos
         lastFrameArrivalNs = arrivalNanos
+        frameTimingCalls++
         if (prevArrival == 0L) return
         val arrivalGapNs = arrivalNanos - prevArrival
+        maxFrameGapNs = maxOf(maxFrameGapNs, arrivalGapNs)
+        if (senderNanos != 0L && prevSender != 0L) {
+            maxSenderGapNs = maxOf(maxSenderGapNs, senderNanos - prevSender)
+        }
         if (arrivalGapNs < LONG_READ_NS) return
         val senderGapMs =
             if (senderNanos == 0L || prevSender == 0L) "unknown"
@@ -120,6 +133,7 @@ internal class StreamReceiveStats(
     fun flush(ended: Boolean = false) {
         val now = nowNs()
         if (!ended && now - windowStart < 5_000_000_000L) return
+        val senderGapMaxMs = if (maxSenderGapNs < 0) "unknown" else "${maxSenderGapNs / 1_000_000}"
         runCatching { report("Receive: $label packets=$packets bytes=$bytes readMaxMs=${maxReadNs / 1_000_000} " +
             "processMaxUs=${maxProcessNs / 1000} seqForwardGaps=$forwardGapPackets " +
             "lateOrDuplicate=$lateOrDuplicate interArrivalMaxMs=${maxInterArrivalNs / 1_000_000} " +
@@ -127,7 +141,8 @@ internal class StreamReceiveStats(
             "seqGapLast=[$lastSequenceGap] seqGapAtMs=$lastSequenceGapAtMs ended=$ended " +
             "windowMs=${(now - windowStart).coerceAtLeast(0) / 1_000_000} " +
             "readsOver250Ms=$readsOver250Ms seqGapAfterReadOver250Ms=$seqGapAfterReadOver250Ms " +
-            "seqMissingAfterReadOver250Ms=$seqMissingAfterReadOver250Ms" + decryptSummary()) }
+            "seqMissingAfterReadOver250Ms=$seqMissingAfterReadOver250Ms " +
+            "frameGapMaxMs=${maxFrameGapNs / 1_000_000} senderGapMaxMs=$senderGapMaxMs frameTimingCalls=$frameTimingCalls" + decryptSummary()) }
         windowStart = now
         decryptSamples = 0
         decryptBytes = 0
@@ -147,6 +162,9 @@ internal class StreamReceiveStats(
         lastSequenceGap = "none"
         lastSequenceGapAtMs = -1L
         lateOrDuplicate = 0
+        frameTimingCalls = 0
+        maxFrameGapNs = 0
+        maxSenderGapNs = -1L
     }
 
     private fun Int.toUnsignedLong(): Long = toLong() and 0xffff_ffffL

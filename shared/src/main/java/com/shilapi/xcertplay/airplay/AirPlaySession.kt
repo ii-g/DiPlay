@@ -64,6 +64,8 @@ interface AirPlayMediaHandler {
     fun onSetupResponseSent(session: AirPlaySession) {}
     /** duckAudio (true) and unduckAudio (false): the iPhone marks the start and end of a navigation prompt. */
     fun onAudioDuck(session: AirPlaySession, ducked: Boolean) {}
+    /** A RECORD arrived: the session is live. Arms session-scoped diagnostics (e.g. the live-session watchdog). */
+    fun onSessionActive(session: AirPlaySession) {}
 }
 
 /**
@@ -112,6 +114,10 @@ class AirPlaySession(
     private val ntp = NtpClock()
     private var keepAliveSocket: DatagramSocket? = null
     private var keepAliveThread: Thread? = null
+    // Last control read, for the live-session watchdog's control-alive signal. Updated in the
+    // control read loop only; the keep-alive and event threads do not touch it.
+    @Volatile internal var lastControlActivityNanos: Long = System.nanoTime()
+        private set
     private val eventWriteLock = Any()
     private val eventThreads = CopyOnWriteArrayList<Thread>()
 
@@ -466,13 +472,14 @@ class AirPlaySession(
                     closeReason = "peer EOF"
                     break
                 }
+                lastControlActivityNanos = System.nanoTime()
                 var plaintext = buffer.copyOf(count)
                 val activeCipher = cipher
                 if (activeCipher != null) {
                     encBuf += plaintext
                     val decrypted = try {
                         activeCipher.decrypt(encBuf)
-                    } catch (error: Exception) {
+                    } catch (error: Throwable) {
                         closeReason = "control decrypt failed: ${error.message ?: error.javaClass.simpleName}"
                         Log.e(TAG, "airplay $closeReason encrypted=${encBuf.size}", error)
                         break
@@ -531,7 +538,7 @@ class AirPlaySession(
                 output.flush()
                 notifySetupResponseSent()
             }
-        } catch (error: Exception) {
+        } catch (error: Throwable) {
             closeReason = "control I/O failed: ${error.message ?: error.javaClass.simpleName}"
             if (!closed.get()) Log.e(TAG, "airplay $closeReason", error)
         } finally {
@@ -554,6 +561,7 @@ class AirPlaySession(
             }
             "RECORD" -> {
                 listener.onSessionActive(this)
+                media.onSessionActive(this)
                 return RtspMessage.Response(status = 200)
             }
             "TEARDOWN" -> return handleTeardown(request)
@@ -689,6 +697,9 @@ class AirPlaySession(
             "timingPort" to openTiming(peerTimingPort),
             "eventPort" to openEvent(),
         )
+        // The key appears by name only elsewhere; log its raw value (true / 1 / absent) so the
+        // low-power keep-alive negotiation is visible in diagnostics.
+        debugLog("airplay SETUP keepAliveLowPower=${dict["keepAliveLowPower"] ?: "absent"}")
         if (dict["keepAliveLowPower"] == true || dict["keepAliveLowPower"] == 1L) {
             response["keepAlivePort"] = openKeepAlive()
         }
@@ -845,8 +856,9 @@ class AirPlaySession(
         while (!closed.get()) {
             try {
                 socket.receive(DatagramPacket(buffer, buffer.size))
-            } catch (_: Exception) {
+            } catch (error: Throwable) {
                 if (closed.get()) return
+                Log.e(TAG, "airplay keep-alive failed: ${error.javaClass.simpleName}", error)
             }
         }
     }
@@ -912,7 +924,7 @@ class AirPlaySession(
             debugLog("airplay video event ready availability=$videoDelivery")
             reapplyClusterContent()
             runEventRead(socket)
-        } catch (error: Exception) {
+        } catch (error: Throwable) {
             if (!closed.get()) {
                 Log.e(TAG, "airplay event accept failed", error)
                 close()
@@ -934,7 +946,7 @@ class AirPlaySession(
                 encrypted += buffer.copyOf(count)
                 val decrypted = try {
                     cipher.decrypt(encrypted)
-                } catch (error: Exception) {
+                } catch (error: Throwable) {
                     Log.e(TAG, "airplay event decrypt failed encrypted=${encrypted.size}", error)
                     break
                 }
@@ -959,7 +971,7 @@ class AirPlaySession(
                     }
                 }
             }
-        } catch (error: Exception) {
+        } catch (error: Throwable) {
             if (!closed.get()) Log.e(TAG, "airplay event read failed", error)
         } finally {
             debugLog("airplay event connection closed")

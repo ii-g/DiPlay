@@ -130,6 +130,73 @@ object CarPlayBonjourProtocol {
 }
 
 /**
+ * Result of [runBoundedCloses]: the per-action durations in milliseconds when every
+ * action finished within the budget, or an empty list with [timedOut] when the budget
+ * expired first (the actions keep running in the background).
+ */
+internal data class BoundedCloseResult(val perCloseMs: List<Long>, val timedOut: Boolean)
+
+/**
+ * How long [CarPlayBonjour.close] waits for the per-instance JmDNS closes before
+ * returning: a healthy close takes ~3ms in the field, so 3s is generous headroom for
+ * a slow interface while keeping the controller teardown budget (see
+ * CONTROLLER_CLOSE_TIMEOUT_MILLIS in CarPlayHostActivity) covered.
+ */
+internal const val JMDNS_CLOSE_TIMEOUT_MILLIS = 3_000L
+
+internal const val JMDNS_CLOSE_THREAD_NAME = "carplay-bonjour-close"
+
+/**
+ * Runs each close action on a daemon thread and waits at most [timeoutMillis] for all
+ * of them. A failing action is recorded like any other and never skips the remaining
+ * actions. When the budget expires first, returns a [BoundedCloseResult] with an empty
+ * timing list and timedOut=true, and [onLateFinish] is invoked on the background
+ * thread with the real per-action timings when it eventually finishes; it is never
+ * invoked when the actions finish within the budget.
+ */
+internal fun runBoundedCloses(
+    closes: List<() -> Unit>,
+    timeoutMillis: Long,
+    threadName: String,
+    onLateFinish: (List<Long>) -> Unit,
+): BoundedCloseResult {
+    require(timeoutMillis > 0) { "timeoutMillis must be positive" }
+    val lock = Any()
+    val timings = mutableListOf<Long>()
+    var callerGaveUp = false
+    var workerDone = false
+    val worker = Thread({
+        for (action in closes) {
+            val started = System.nanoTime()
+            runCatching { action() }
+            val elapsedMs = (System.nanoTime() - started) / 1_000_000
+            synchronized(lock) { timings += elapsedMs }
+        }
+        val late = synchronized(lock) {
+            workerDone = true
+            callerGaveUp
+        }
+        if (late) onLateFinish(timings.toList())
+    }, threadName).apply {
+        isDaemon = true
+        start()
+    }
+    try {
+        worker.join(timeoutMillis)
+    } catch (_: InterruptedException) {
+        Thread.currentThread().interrupt()
+    }
+    return synchronized(lock) {
+        if (workerDone) {
+            BoundedCloseResult(timings.toList(), timedOut = false)
+        } else {
+            callerGaveUp = true
+            BoundedCloseResult(emptyList(), timedOut = true)
+        }
+    }
+}
+
+/**
  * Publishes the accessory AirPlay service and discovers the iPhone's CarPlay control service.
  *
  * The NSD callbacks only enqueue work. Resolution, probing, and [onEvent] all run on the worker
@@ -179,6 +246,10 @@ class CarPlayBonjour(
     @Volatile
     private var closed = false
     @Volatile private var lastCloseSummary: String? = null
+    // Guards the interim/final close summaries: the timed-out placeholder must never
+    // overwrite the real timings recorded later by the background JmDNS close.
+    private val closeSummaryLock = Any()
+    private var closeSummaryFinal = false
     private var registrationRequested = false
     private var discoveryRequested = false
     @Volatile
@@ -370,16 +441,70 @@ class CarPlayBonjour(
             workerToJoin?.interrupt()
             if (multicastLock.isHeld) multicastMs = timedMs { multicastLock.release() }
         }
-        // The 11s seen in the field is the whole Bonjour resource, not JmDNS.close() alone
-        // (3ms in one attempt), so every step is timed separately, JmDNS per instance.
-        val jmdnsMs = dnsToClose.map { dns -> timedMs { runCatching { dns.close() } } }
+        // The worker only watches `closed` and the interrupt above, so join it before
+        // the JmDNS wait: both waits are bounded and their order has no observable effect.
         val joinStarted = System.nanoTime()
         workerToJoin?.let(::joinWorker)
         val joinMs = (System.nanoTime() - joinStarted) / 1_000_000
-        lastCloseSummary = "totalMs=${(System.nanoTime() - closeStarted) / 1_000_000} " +
-            "unregisterMs=$unregisterMs stopDiscoveryMs=$stopDiscoveryMs socketMs=$socketMs " +
-            "jmdnsMs=$jmdnsMs multicastMs=$multicastMs workerJoinMs=$joinMs"
-        Log.i(TAG, "Bonjour close $lastCloseSummary")
+        // The 11s seen in the field is the whole Bonjour resource, not JmDNS.close() alone
+        // (3ms in one attempt), so every step is timed separately, JmDNS per instance.
+        // JmDNS.close() itself has no timeout, and the exact hang inside it cannot be
+        // established from this repo, so the per-instance closes run on a daemon thread
+        // with a bounded wait instead of on the calling thread: close() returns after at
+        // most JMDNS_CLOSE_TIMEOUT_MILLIS here, and a still-running close keeps going in
+        // the background and records its timings into lastCloseSummary when it finishes.
+        // The interim summary marks the wait as timed out so a slow close stays visible
+        // in diagnostics even if the background thread never finishes.
+        val jmdnsResult = runBoundedCloses(
+            closes = dnsToClose.map { dns -> { dns.close() } },
+            timeoutMillis = JMDNS_CLOSE_TIMEOUT_MILLIS,
+            threadName = JMDNS_CLOSE_THREAD_NAME,
+            onLateFinish = { lateMs ->
+                recordCloseSummary(
+                    closeStarted, unregisterMs, stopDiscoveryMs, socketMs,
+                    lateMs, multicastMs, joinMs, jmdnsTimedOut = true, isFinal = true,
+                )
+            },
+        )
+        if (jmdnsResult.timedOut) {
+            recordCloseSummary(
+                closeStarted, unregisterMs, stopDiscoveryMs, socketMs,
+                emptyList(), multicastMs, joinMs, jmdnsTimedOut = true, isFinal = false,
+            )
+        } else {
+            recordCloseSummary(
+                closeStarted, unregisterMs, stopDiscoveryMs, socketMs,
+                jmdnsResult.perCloseMs, multicastMs, joinMs, jmdnsTimedOut = false, isFinal = true,
+            )
+        }
+    }
+
+    /**
+     * Writes the per-step close timings to [lastCloseSummary] and the log. A non-final
+     * (timed-out) summary is only a placeholder until the background JmDNS close
+     * finishes: it is skipped when the final summary was already recorded, so a late
+     * finish can never be overwritten by the interim line.
+     */
+    private fun recordCloseSummary(
+        closeStarted: Long,
+        unregisterMs: Long,
+        stopDiscoveryMs: Long,
+        socketMs: Long,
+        jmdnsMs: List<Long>,
+        multicastMs: Long,
+        workerJoinMs: Long,
+        jmdnsTimedOut: Boolean,
+        isFinal: Boolean,
+    ) {
+        synchronized(closeSummaryLock) {
+            if (!isFinal && closeSummaryFinal) return
+            if (isFinal) closeSummaryFinal = true
+            lastCloseSummary = "totalMs=${(System.nanoTime() - closeStarted) / 1_000_000} " +
+                "unregisterMs=$unregisterMs stopDiscoveryMs=$stopDiscoveryMs socketMs=$socketMs " +
+                "jmdnsMs=$jmdnsMs multicastMs=$multicastMs workerJoinMs=$workerJoinMs" +
+                if (jmdnsTimedOut) " jmdnsTimedOut=true" else ""
+            Log.i(TAG, "Bonjour close $lastCloseSummary")
+        }
     }
 
     @Suppress("DEPRECATION")
