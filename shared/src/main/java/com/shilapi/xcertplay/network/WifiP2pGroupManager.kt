@@ -765,7 +765,12 @@ class WifiP2pGroupManager(
             "Allow Nearby devices for DiPlay in the head unit's app permissions"
             else "Allow precise Location for DiPlay in the head unit's app permissions")
         if (wifiEnabled == false) {
-            if (!tryEnableWifi(wifi)) throw IOException("Turn on Wi-Fi in the head unit's settings, then reconnect")
+            // Classified, not a plain IOException: fail() reads the reason off the cause
+            // chain, and HOTSPOT_CONFIGURATION is non-retryable, so the activity stops
+            // the silent rebuild loop instead of retrying an impossible condition.
+            if (!tryEnableWifi(wifi)) throw WirelessStartupException(
+                WirelessStartupFailure.HOTSPOT_CONFIGURATION,
+                "Turn on Wi-Fi in the head unit's settings, then reconnect")
             // The radio came back on; re-read both values, since fiveGhzSupported
             // also reads false while Wi-Fi is off.
             wifiEnabled = runCatching { wifi?.isWifiEnabled }.getOrNull()

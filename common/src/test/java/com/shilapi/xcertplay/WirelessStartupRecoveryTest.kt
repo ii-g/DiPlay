@@ -231,6 +231,22 @@ class WirelessStartupRecoveryTest {
         }
     }
 
+    // Wi-Fi that stays off after the re-enable attempt: the screen names the radio
+    // instead of the hotspot, and stops instead of rebuilding the stack in a loop.
+    @Test fun wifiThatStaysOffNamesTheRadioAndDoesNotRetry() {
+        val stage = TextView(activity)
+        ReflectionHelpers.setField(activity, "stageStatusView", stage)
+        report(status = CarPlayStatus.Failed("Could not establish WIFI_P2P hotspot: " +
+            "Turn on Wi-Fi in the head unit's settings, then reconnect",
+            startupFailure = WirelessStartupFailure.HOTSPOT_CONFIGURATION))
+        assertEquals(activity.getString(R.string.turn_on_wi_fi_in_the_head_unit_s_settings_to_connect) + "\n" +
+            activity.getString(R.string.wireless_startup_retries_exhausted), stage.text.toString())
+        assertEquals(0, budget().retries)
+        assertFalse(ReflectionHelpers.getField(activity, "reconnectScheduled"))
+        assertTrue(ReflectionHelpers.getField(activity, "startupRetryStopped"))
+        assertEquals(View.VISIBLE, retry.visibility)
+    }
+
     // The stopped attempt can still report its own failure again, or its cleanup's.
     @Test fun aLaterFailureOfTheStoppedAttemptKeepsTheLineSayingTheRetriesStopped() {
         val stage = TextView(activity)

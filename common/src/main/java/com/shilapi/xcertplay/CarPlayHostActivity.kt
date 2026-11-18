@@ -6077,9 +6077,16 @@ open class CarPlayHostActivity : ComponentActivity() {
                 setConnectionStage("${getString(ConnectionFailureGuidance.stage(knownCause))}\n" +
                     getString(R.string.wireless_startup_retries_exhausted))
             } else if (startupFailure == WirelessStartupFailure.HOTSPOT_CONFIGURATION) {
+                // No P2P→MANUAL fallback is checked here: MANUAL is the permanent mode, so
+                // there is nothing to fall back to. Stop with guidance and the manual retry.
                 // Its cause is in English, for the report; the help line below says what to check.
-                setConnectionStage("${getString(R.string.hotspot_network_not_ready)}\n" +
-                    getString(R.string.wireless_startup_retries_exhausted))
+                if (englishReason.contains("Turn on Wi-Fi", ignoreCase = true)) {
+                    setConnectionStage("${getString(R.string.turn_on_wi_fi_in_the_head_unit_s_settings_to_connect)}\n" +
+                        getString(R.string.wireless_startup_retries_exhausted))
+                } else {
+                    setConnectionStage("${getString(R.string.hotspot_network_not_ready)}\n" +
+                        getString(R.string.wireless_startup_retries_exhausted))
+                }
             } else if (!startupFailure.retryable) {
                 setConnectionStage(reason, englishReason)
             } else {

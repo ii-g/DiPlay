@@ -10,6 +10,8 @@ import android.net.wifi.p2p.WifiP2pInfo
 import android.net.wifi.p2p.WifiP2pManager
 import com.shilapi.xcertplay.network.P2pResetRequiredException
 import com.shilapi.xcertplay.network.WifiP2pGroupManager
+import com.shilapi.xcertplay.network.WirelessStartupException
+import com.shilapi.xcertplay.network.WirelessStartupFailure
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
@@ -433,6 +435,23 @@ class WifiP2pGroupManagerTest {
         assertTrue(wifi.isWifiEnabled)
         assertTrue(logs.any { it.contains("setWifiEnabled returned=true") })
         assertTrue(radio.requests.isNotEmpty())
+    }
+
+    @Test fun disabledWifiThatStaysOffIsAClassifiedConfigurationFailure() {
+        val wifi = context.getSystemService(WifiManager::class.java)
+        wifi.isWifiEnabled = false
+        // The framework refuses the re-enable request, as on firmware that blocks it.
+        shadowOf(wifi).setWifiModifiable(false)
+        val logs = mutableListOf<String>()
+        WifiP2pGroupManager(context, logs::add).use { manager ->
+            val error = failure { manager.start(3000) }
+            assertTrue(error is WirelessStartupException)
+            assertEquals(WirelessStartupFailure.HOTSPOT_CONFIGURATION, (error as WirelessStartupException).reason)
+            assertTrue(error.message!!.contains("Turn on Wi-Fi"))
+        }
+        assertTrue(logs.any { it.contains("setWifiEnabled returned=false") })
+        assertTrue(radio.requests.isEmpty())
+        assertEquals(0, radio.removals)
     }
 
     private fun failure(block: () -> Any): Throwable {
