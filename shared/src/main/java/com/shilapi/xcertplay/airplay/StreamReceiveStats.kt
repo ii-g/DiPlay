@@ -1,5 +1,8 @@
 package com.shilapi.xcertplay.airplay
 
+import com.shilapi.xcertplay.network.VideoGapRadioState
+import com.shilapi.xcertplay.network.WifiScanEvents
+
 /** Receive-thread timing only: no payloads, endpoint addresses, or route data. */
 internal class StreamReceiveStats(
     private val label: String,
@@ -17,6 +20,9 @@ internal class StreamReceiveStats(
     private var seqMissingAfterReadOver250Ms = 0
     private var lastReceivedNs = 0L
     private var maxInterArrivalNs = 0L
+    private var lastReadNs = 0L
+    private var lastSenderNanos = 0L
+    private var lastFrameArrivalNs = 0L
     private var maxProcessNs = 0L
     private var lastTimestamp: Int? = null
     private var nextSequence: Int? = null
@@ -36,6 +42,7 @@ internal class StreamReceiveStats(
     fun received(size: Int, sequence: Int? = null, timestamp: Int? = null) {
         processingStart = nowNs()
         val readNs = processingStart - readStart
+        lastReadNs = readNs
         maxReadNs = maxOf(maxReadNs, readNs)
         if (readNs >= LONG_READ_NS) readsOver250Ms++
         if (lastReceivedNs != 0L) {
@@ -73,6 +80,36 @@ internal class StreamReceiveStats(
         decryptBytes += size
         decryptSumNs += durationNs
         maxDecryptNs = maxOf(maxDecryptNs, durationNs)
+    }
+
+    /**
+     * Compares the sender-side gap with the arrival-side gap for one video frame.
+     * [senderNanos] is the iPhone's frame time from the header and [arrivalNanos] is when
+     * this frame's body finished arriving, both in nanoseconds — but on *different* clocks,
+     * so only the gaps between consecutive frames are compared, never the raw difference.
+     * When the arrival gap exceeds 250ms one line is reported: a sender gap near the arrival
+     * gap means the iPhone stopped sending (or frames were lost upstream), while a sender
+     * gap near one frame interval means the radio/receive path stalled. The scan age and
+     * radio state at the gap come from [WifiScanEvents] and [VideoGapRadioState]. Logging
+     * only; no behaviour changes. Deliberately independent of [FramePacer], which only
+     * consumes sender times for smooth video.
+     */
+    fun frameTiming(senderNanos: Long, arrivalNanos: Long) {
+        val prevSender = lastSenderNanos
+        val prevArrival = lastFrameArrivalNs
+        lastSenderNanos = senderNanos
+        lastFrameArrivalNs = arrivalNanos
+        if (prevArrival == 0L) return
+        val arrivalGapNs = arrivalNanos - prevArrival
+        if (arrivalGapNs < LONG_READ_NS) return
+        val senderGapMs =
+            if (senderNanos == 0L || prevSender == 0L) "unknown"
+            else "${(senderNanos - prevSender) / 1_000_000}"
+        runCatching {
+            report("Receive: $label senderVsArrival arrivalGapMs=${arrivalGapNs / 1_000_000} " +
+                "senderGapMs=$senderGapMs readMs=${lastReadNs / 1_000_000} " +
+                "${WifiScanEvents.describe(arrivalNanos)} ${VideoGapRadioState.describe()}")
+        }
     }
 
     fun processed() {

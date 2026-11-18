@@ -105,6 +105,7 @@ class ScreenStream(
                 val payload = ScreenCodec.decryptFrame(key, frameCounter.get(), header, body)
                 stats.decrypted(System.nanoTime() - start, body.size)
                 frameCounter.incrementAndGet()
+                val senderNanos = ScreenCodec.senderNanos(header)
                 if (firstFrameLogged.compareAndSet(false, true)) {
                     Log.i(
                         TAG,
@@ -112,7 +113,8 @@ class ScreenStream(
                         "head=${payload.hexPrefix(16)} chacha=${AirPlayCrypto.chachaImplementation}",
                     )
                 }
-                listener.onFrame(ScreenCodec.lengthPrefixedToAnnexB(payload), ScreenCodec.senderNanos(header), arrivalNanos)
+                listener.onFrame(ScreenCodec.lengthPrefixedToAnnexB(payload), senderNanos, arrivalNanos)
+                stats.frameTiming(senderNanos, arrivalNanos)
             }
             OP_VIDEO_CONFIG -> {
                 val (codec, codecData) = ScreenCodec.detectConfig(body)
