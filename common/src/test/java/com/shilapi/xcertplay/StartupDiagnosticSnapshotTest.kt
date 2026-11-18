@@ -9,6 +9,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
@@ -61,5 +62,65 @@ class StartupDiagnosticSnapshotTest {
     @Test fun unrelatedBroadcastsDoNotCreateOrOverwriteBootEvidence() {
         BootReceiver().onReceive(app, Intent("custom.intent.token=secret"))
         assertTrue(StartupDiagnosticSnapshot.report(app).contains("received=false"))
+    }
+
+    @Test fun enabledBootAlsoStartsTheSessionServiceForTheRetryWatch() {
+        AirPlayPersistence.saveAutoStartOnBoot(app, true)
+        BootReceiver().onReceive(app, Intent(Intent.ACTION_BOOT_COMPLETED))
+        // nextStartedService pops the queue, so it is read once per test.
+        val service = shadowOf(app).nextStartedService
+        assertNotNull(service)
+        assertEquals(DiPlaySessionService::class.java.name, service!!.component!!.className)
+        assertEquals(DiPlaySessionService.ACTION_BOOT, service.action)
+        assertTrue(StartupDiagnosticSnapshot.report(app).contains("serviceResult=service-started"))
+    }
+
+    @Test fun disabledBootStartsNeitherActivityNorService() {
+        BootReceiver().onReceive(app, Intent(Intent.ACTION_BOOT_COMPLETED))
+        assertNull(shadowOf(app).nextStartedService)
+        assertTrue(StartupDiagnosticSnapshot.report(app).contains("serviceResult=not-attempted"))
+    }
+
+    @Test fun serviceResultRetriesAndActivitySeenAreRecordedSeparately() {
+        StartupDiagnosticSnapshot.received(app, true)
+        StartupDiagnosticSnapshot.serviceResult(app)
+        StartupDiagnosticSnapshot.retryAttempt(app, 1)
+        val unseen = StartupDiagnosticSnapshot.report(app)
+        assertTrue(unseen.contains("serviceResult=service-started"))
+        assertTrue(unseen.contains("activityShown=false"))
+        assertTrue(unseen.contains("retries=1@"))
+        assertTrue(unseen.contains("=startActivity-returned"))
+        StartupDiagnosticSnapshot.markActivitySeen(app)
+        assertTrue(StartupDiagnosticSnapshot.report(app).contains("activityShown=true"))
+    }
+
+    @Test fun markActivitySeenKeepsTheFirstResumeOnly() {
+        StartupDiagnosticSnapshot.received(app, true)
+        app.getSharedPreferences("diplay_startup_diagnostics", Context.MODE_PRIVATE).edit()
+            .putLong("activitySeenAt", 12345L).commit()
+        StartupDiagnosticSnapshot.markActivitySeen(app)
+        assertEquals(12345L, StartupDiagnosticSnapshot.activitySeenAt(app))
+    }
+
+    @Test fun retryFailureRecordsOnlyItsClass() {
+        StartupDiagnosticSnapshot.received(app, true)
+        StartupDiagnosticSnapshot.retryAttempt(app, 1, SecurityException("Jane's phone token=private-data"))
+        val report = StartupDiagnosticSnapshot.report(app)
+        assertTrue(report.contains("retries=1@"))
+        assertTrue(report.contains("failed:SecurityException"))
+        assertFalse(report.contains("Jane")); assertFalse(report.contains("private-data"))
+    }
+
+    @Test fun secondBootResetsServiceRetryAndSeenEvidence() {
+        StartupDiagnosticSnapshot.received(app, true)
+        StartupDiagnosticSnapshot.serviceResult(app)
+        StartupDiagnosticSnapshot.retryAttempt(app, 1)
+        StartupDiagnosticSnapshot.markActivitySeen(app)
+        StartupDiagnosticSnapshot.received(app, true)
+        val report = StartupDiagnosticSnapshot.report(app)
+        assertTrue(report.contains("serviceResult=not-attempted"))
+        assertTrue(report.contains("activityShown=false"))
+        assertTrue(report.contains("retries=none"))
+        assertEquals(0, StartupDiagnosticSnapshot.retryCount(app))
     }
 }
