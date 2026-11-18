@@ -1069,6 +1069,8 @@ private class VideoDecoder(
     }
 
     private fun run() {
+        // Same display priority as the output thread, so decoding is not starved by background work.
+        runCatching { android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_DISPLAY) }
         try {
             while (running) {
                 val job = queue.poll(5)
