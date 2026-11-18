@@ -423,13 +423,16 @@ class WifiP2pGroupManagerTest {
         assertEquals(0, radio.removals)
     }
 
-    @Test fun disabledWifiHasAnActionableErrorWithoutCreatingAnything() {
-        context.getSystemService(WifiManager::class.java).isWifiEnabled = false
-        WifiP2pGroupManager(context).use { manager ->
-            assertTrue(failure { manager.start(3000) }.message!!.contains("Turn on Wi-Fi"))
+    @Test fun disabledWifiIsReEnabledBeforeCreatingAnything() {
+        val wifi = context.getSystemService(WifiManager::class.java)
+        wifi.isWifiEnabled = false
+        val logs = mutableListOf<String>()
+        WifiP2pGroupManager(context, logs::add).use { manager ->
+            background { manager.start(5000) }
         }
-        assertTrue(radio.requests.isEmpty())
-        assertEquals(0, radio.removals)
+        assertTrue(wifi.isWifiEnabled)
+        assertTrue(logs.any { it.contains("setWifiEnabled returned=true") })
+        assertTrue(radio.requests.isNotEmpty())
     }
 
     private fun failure(block: () -> Any): Throwable {

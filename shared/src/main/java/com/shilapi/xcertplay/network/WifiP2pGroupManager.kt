@@ -748,8 +748,8 @@ class WifiP2pGroupManager(
     /** Returns false only when Wi-Fi is on and reports no 5 GHz band; it also reads false while Wi-Fi is off. */
     private fun checkPrerequisites(station: Station): Boolean {
         val wifi = appContext.getSystemService(WifiManager::class.java)
-        val fiveGhzSupported = runCatching { wifi?.is5GHzBandSupported }.getOrNull()
-        val wifiEnabled = runCatching { wifi?.isWifiEnabled }.getOrNull()
+        var fiveGhzSupported = runCatching { wifi?.is5GHzBandSupported }.getOrNull()
+        var wifiEnabled = runCatching { wifi?.isWifiEnabled }.getOrNull()
         val locationEnabled = runCatching {
             appContext.getSystemService(LocationManager::class.java)?.isLocationEnabledCompat()
         }.getOrNull()
@@ -764,10 +764,46 @@ class WifiP2pGroupManager(
         if (!granted) throw IOException(if (Build.VERSION.SDK_INT >= 33)
             "Allow Nearby devices for DiPlay in the head unit's app permissions"
             else "Allow precise Location for DiPlay in the head unit's app permissions")
-        if (wifiEnabled == false) throw IOException("Turn on Wi-Fi in the head unit's settings, then reconnect")
+        if (wifiEnabled == false) {
+            if (!tryEnableWifi(wifi)) throw IOException("Turn on Wi-Fi in the head unit's settings, then reconnect")
+            // The radio came back on; re-read both values, since fiveGhzSupported
+            // also reads false while Wi-Fi is off.
+            wifiEnabled = runCatching { wifi?.isWifiEnabled }.getOrNull()
+            fiveGhzSupported = runCatching { wifi?.is5GHzBandSupported }.getOrNull()
+            diagnostic("Wi-Fi P2P preflight wifiEnabled=$wifiEnabled " +
+                "fiveGhzSupported=${fiveGhzSupported ?: "unknown"} after setWifiEnabled")
+        }
         // Location mode is diagnostic only: AOSP createGroup does not require it to be on.
         // Do not block firmware where Wi-Fi Direct works with Location services disabled.
         return !(wifiEnabled == true && fiveGhzSupported == false)
+    }
+
+    /**
+     * Best-effort attempt to switch the radio back on, then a bounded re-read of its state.
+     * setWifiEnabled is only an attempt on this firmware (API 27): it reports its own
+     * success, and the radio may still stay off, so a false result (or a radio that
+     * never comes up) falls through to the normal failure instead of being retried here.
+     */
+    @Suppress("DEPRECATION")
+    private fun tryEnableWifi(wifi: WifiManager?): Boolean {
+        if (wifi == null) {
+            diagnostic("Wi-Fi P2P preflight setWifiEnabled skipped=wifi_manager_unavailable")
+            return false
+        }
+        val requested = runCatching { wifi.setWifiEnabled(true) }.getOrNull()
+        diagnostic("Wi-Fi P2P preflight setWifiEnabled returned=$requested")
+        val deadlineNanos = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(WIFI_ENABLE_WAIT_MILLIS)
+        while (System.nanoTime() < deadlineNanos) {
+            if (wifiEnabled() == true) return true
+            try {
+                Thread.sleep(WIFI_ENABLE_POLL_MILLIS)
+            } catch (interrupted: InterruptedException) {
+                Thread.currentThread().interrupt()
+                throw IOException("Interrupted while waiting for Wi-Fi to turn on", interrupted)
+            }
+        }
+        diagnostic("Wi-Fi P2P preflight wifiEnabled still false after ${WIFI_ENABLE_WAIT_MILLIS}ms")
+        return false
     }
 
     @RequiresApi(Build.VERSION_CODES.Q)
@@ -975,6 +1011,8 @@ class WifiP2pGroupManager(
         const val TAG = "xcertplay-usb"
         const val NANOS_PER_MILLISECOND = 1_000_000L
         const val REMOVE_GROUP_TIMEOUT_MILLIS = 2_000L
+        const val WIFI_ENABLE_WAIT_MILLIS = 3_000L
+        const val WIFI_ENABLE_POLL_MILLIS = 100L
         const val UNKNOWN_CHANNEL = 0
         val REQUEST_POLL_NANOS: Long = TimeUnit.MILLISECONDS.toNanos(500)
         const val TOKEN_ALPHABET =
