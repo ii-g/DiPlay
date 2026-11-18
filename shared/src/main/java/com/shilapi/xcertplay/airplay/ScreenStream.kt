@@ -1,6 +1,7 @@
 package com.shilapi.xcertplay.airplay
 
 import android.util.Log
+import com.shilapi.xcertplay.network.TcpLiveness
 import java.io.Closeable
 import java.io.InputStream
 import java.net.InetAddress
@@ -62,9 +63,21 @@ class ScreenStream(
     }
 
     private fun accept(bound: ServerSocket) {
+        // The read/decrypt loop runs here, so this thread gets display priority like the decoder.
+        runCatching { android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_DISPLAY) }
         try {
             val accepted = bound.acceptFrom(expectedPeer) { onDiagnostic("Video: rejected sender outside the control session") }
             socket = accepted
+            // Same peer-health tuning as the control socket: a vanished iPhone aborts the
+            // kernel after 20 s without data instead of stalling the read forever.
+            TcpLiveness.configure(accepted) { onDiagnostic(it) }
+            // Keep short Wi-Fi bursts in the kernel while decrypting or scheduling pauses
+            // the receive thread. The platform may cap this request; log the actual size.
+            val originalBufferBytes = runCatching { accepted.receiveBufferSize }.getOrDefault(0)
+            if (originalBufferBytes < VIDEO_RECEIVE_BUFFER_BYTES) {
+                runCatching { accepted.receiveBufferSize = VIDEO_RECEIVE_BUFFER_BYTES }
+            }
+            onDiagnostic("Video TCP receive buffer original=$originalBufferBytes requested=$VIDEO_RECEIVE_BUFFER_BYTES actual=${runCatching { accepted.receiveBufferSize }.getOrDefault(0)}")
             run(accepted)
         } catch (error: Exception) {
             if (!closed.get()) listener.onClosed(error)
@@ -105,6 +118,7 @@ class ScreenStream(
                 val payload = ScreenCodec.decryptFrame(key, frameCounter.get(), header, body)
                 stats.decrypted(System.nanoTime() - start, body.size)
                 frameCounter.incrementAndGet()
+                val senderNanos = ScreenCodec.senderNanos(header)
                 if (firstFrameLogged.compareAndSet(false, true)) {
                     Log.i(
                         TAG,
@@ -112,7 +126,8 @@ class ScreenStream(
                         "head=${payload.hexPrefix(16)} chacha=${AirPlayCrypto.chachaImplementation}",
                     )
                 }
-                listener.onFrame(ScreenCodec.lengthPrefixedToAnnexB(payload), ScreenCodec.senderNanos(header), arrivalNanos)
+                listener.onFrame(ScreenCodec.lengthPrefixedToAnnexB(payload), senderNanos, arrivalNanos)
+                stats.frameTiming(senderNanos, arrivalNanos)
             }
             OP_VIDEO_CONFIG -> {
                 val (codec, codecData) = ScreenCodec.detectConfig(body)
@@ -137,6 +152,8 @@ class ScreenStream(
 
     private companion object {
         const val TAG = "xcertplay-usb"
+        // Same 512 KB receive buffer as the audio stream; the platform may cap it.
+        const val VIDEO_RECEIVE_BUFFER_BYTES = 512 * 1024
         const val HEADER_LEN = 128
         const val OPCODE_OFFSET = 4
         const val OP_VIDEO_FRAME = 0

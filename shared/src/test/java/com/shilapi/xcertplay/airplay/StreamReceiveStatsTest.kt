@@ -81,4 +81,43 @@ class StreamReceiveStatsTest {
         stats.flush()
         assertTrue(!output.last().contains("decrypt"))
     }
+
+    @Test fun senderVsArrivalGapSeparatesSenderStallFromReceiveStall() {
+        var clock = 0L
+        val output = mutableListOf<String>()
+        val stats = StreamReceiveStats("video", output::add) { clock }
+        fun frame(senderMs: Long, readMs: Long) {
+            stats.reading()
+            clock += readMs * 1_000_000L
+            stats.received(1_000)
+            stats.frameTiming(senderMs * 1_000_000L, clock)
+            stats.processed()
+        }
+        frame(senderMs = 1_000, readMs = 10) // first frame: no previous, no line
+        frame(senderMs = 1_010, readMs = 10) // 10ms gap: below the 250ms threshold
+        frame(senderMs = 1_026, readMs = 1_600) // iPhone kept sending; arrival stalled 1600ms
+        assertEquals(1, output.size)
+        assertTrue(output.single().contains("senderVsArrival arrivalGapMs=1600 senderGapMs=16 readMs=1600"))
+        frame(senderMs = 2_626, readMs = 1_500) // iPhone stopped sending too: sender gap tracks arrival
+        assertEquals(2, output.size)
+        assertTrue(output.last().contains("senderVsArrival arrivalGapMs=1500 senderGapMs=1600 readMs=1500"))
+    }
+
+    @Test fun unknownSenderTimeStillLogsTheArrivalGap() {
+        var clock = 0L
+        val output = mutableListOf<String>()
+        val stats = StreamReceiveStats("video", output::add) { clock }
+        stats.reading()
+        clock = 10_000_000L
+        stats.received(1_000)
+        stats.frameTiming(1_000_000_000L, clock)
+        stats.processed()
+        stats.reading()
+        clock = 1_610_000_000L
+        stats.received(1_000)
+        stats.frameTiming(0L, clock)
+        stats.processed()
+        assertEquals(1, output.size)
+        assertTrue(output.single().contains("senderVsArrival arrivalGapMs=1600 senderGapMs=unknown readMs=1600"))
+    }
 }

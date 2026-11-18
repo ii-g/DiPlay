@@ -2,6 +2,7 @@ package com.shilapi.xcertplay
 
 import android.content.Context
 import android.os.Build
+import android.util.Log
 import com.shilapi.xcertplay.airplay.AirPlayDisplaySettings
 import com.shilapi.xcertplay.airplay.AirPlayPhysicalSizeBasis
 import com.shilapi.xcertplay.airplay.CarPlayDisplayScale
@@ -25,6 +26,7 @@ import java.io.File
 object AirPlayPersistence {
     /** 0 uses usage-based routing; 1–20 select stream types supported by the head unit. */
     val AUDIO_CHANNELS = 0..20
+    private const val TAG = "xcertplay-weak-device"
     private const val PREFS = "xcertplay_airplay"
     private const val KEY_IDENT_PRIVATE = "identity_private"
     private const val KEY_IDENT_PUBLIC = "identity_public"
@@ -840,6 +842,10 @@ object AirPlayPersistence {
         saveSprdDecoderTuning(context, targets.sprdDecoderTuning)
         saveBtSuspendDuringCarplay(context, targets.btSuspendDuringCarplay)
         saveWeakDeviceMode(context, true)
+        Log.i(TAG, "weak device profile applied scale=${targets.displayScalePercent}% " +
+            "widthMm=${targets.widthPhysicalMm} directVideo=${targets.directVideoOutput} " +
+            "musicBufferMs=${targets.wirelessMusicBufferMillis} sprd=${targets.sprdDecoderTuning} " +
+            "btSuspend=${targets.btSuspendDuringCarplay}")
     }
 
     /** Restores the values saved when the profile was applied, or the factory defaults. */
@@ -853,6 +859,10 @@ object AirPlayPersistence {
         saveBtSuspendDuringCarplay(context, previous.btSuspendDuringCarplay)
         clearWeakDevicePrevious(context)
         saveWeakDeviceMode(context, false)
+        Log.i(TAG, "weak device profile restored scale=${previous.displayScalePercent}% " +
+            "widthMm=${previous.widthPhysicalMm} directVideo=${previous.directVideoOutput} " +
+            "musicBufferMs=${previous.wirelessMusicBufferMillis} sprd=${previous.sprdDecoderTuning} " +
+            "btSuspend=${previous.btSuspendDuringCarplay}")
     }
 
     fun loadDirectVideoOutput(context: Context): Boolean =

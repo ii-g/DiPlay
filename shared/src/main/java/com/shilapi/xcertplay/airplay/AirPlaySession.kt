@@ -145,6 +145,8 @@ class AirPlaySession(
     internal fun logTrace(message: String) = trace { message }
 
     fun start() {
+        // A touch sent in a previous session must not be charged to this session's first frame.
+        com.shilapi.xcertplay.media.TouchLatencyProbe.clear()
         Thread(::runControl, "airplay-control").apply {
             isDaemon = true
             start()
@@ -153,6 +155,9 @@ class AirPlaySession(
 
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
+        // Drop any touch still waiting for a frame: the next session's first frame must not
+        // report it as a phantom 30s+ latency.
+        com.shilapi.xcertplay.media.TouchLatencyProbe.clear()
         mainScreenToken = null
         clearClusterContent()
         safeClose(socket)

@@ -800,10 +800,14 @@ open class CarPlayHostActivity : ComponentActivity() {
         }
 
         override fun onSurfaceTextureDestroyed(texture: SurfaceTexture): Boolean {
+            // Breadcrumb for the open question of why the video surface dies while the session
+            // is live: the framework gives no reason, so record the state that distinguishes
+            // teardown (finishing/destroyed/shuttingDown) from a config change from a
+            // live-session destroy. `current=false` means a stale texture, not the live one.
+            appendLog("Texture surface destroyed current=${currentSurfaceTexture === texture} sessionActive=${activeAirPlaySession != null} sink=${sink != null} finishing=$isFinishing destroyed=$isDestroyed changingConfig=$isChangingConfigurations shuttingDown=${shuttingDown.get()}")
             if (currentSurfaceTexture !== texture) return true
             currentSurface?.let(videoSurfaceOwner::clear)
             currentSurfaceTexture = null
-            appendLog("Texture surface destroyed")
             return true
         }
 
@@ -834,6 +838,11 @@ open class CarPlayHostActivity : ComponentActivity() {
         }
 
         override fun surfaceDestroyed(holder: SurfaceHolder) {
+            // Breadcrumb for the open question of why the video surface dies while the session
+            // is live: the framework gives no reason, so record the state that distinguishes
+            // teardown (finishing/destroyed/shuttingDown) from a config change from a
+            // live-session destroy.
+            appendLog("SurfaceView video surface destroyed holderMatches=${holder === fallbackVideoView?.holder} sessionActive=${activeAirPlaySession != null} sink=${sink != null} finishing=$isFinishing destroyed=$isDestroyed changingConfig=$isChangingConfigurations shuttingDown=${shuttingDown.get()}")
             val surface = holder.surface
             captureLastPicture()
             // The SurfaceHolder contract: nothing may render to the surface once this returns. Every decoder
@@ -1227,6 +1236,10 @@ open class CarPlayHostActivity : ComponentActivity() {
         if (!menuOpen) {
             displayScalePercent = AirPlayPersistence.loadDisplayScalePercent(this)
             displayScaleTenths = CarPlayDisplayScale.sanitize((displayScalePercent + 5) / 10)
+            // The size is re-read here like the scale: toggling weak-device mode in Settings
+            // changes the stored size while this screen is paused, and the session negotiates
+            // from this field, so without this it kept negotiating the stale size.
+            widthPhysicalMm = AirPlayPersistence.loadWidthPhysicalMm(this)
             updateResolutionMenu()
         }
         if (intent.getBooleanExtra("picture_controls", false)) {
@@ -6064,9 +6077,16 @@ open class CarPlayHostActivity : ComponentActivity() {
                 setConnectionStage("${getString(ConnectionFailureGuidance.stage(knownCause))}\n" +
                     getString(R.string.wireless_startup_retries_exhausted))
             } else if (startupFailure == WirelessStartupFailure.HOTSPOT_CONFIGURATION) {
+                // No P2P→MANUAL fallback is checked here: MANUAL is the permanent mode, so
+                // there is nothing to fall back to. Stop with guidance and the manual retry.
                 // Its cause is in English, for the report; the help line below says what to check.
-                setConnectionStage("${getString(R.string.hotspot_network_not_ready)}\n" +
-                    getString(R.string.wireless_startup_retries_exhausted))
+                if (englishReason.contains("Turn on Wi-Fi", ignoreCase = true)) {
+                    setConnectionStage("${getString(R.string.turn_on_wi_fi_in_the_head_unit_s_settings_to_connect)}\n" +
+                        getString(R.string.wireless_startup_retries_exhausted))
+                } else {
+                    setConnectionStage("${getString(R.string.hotspot_network_not_ready)}\n" +
+                        getString(R.string.wireless_startup_retries_exhausted))
+                }
             } else if (!startupFailure.retryable) {
                 setConnectionStage(reason, englishReason)
             } else {

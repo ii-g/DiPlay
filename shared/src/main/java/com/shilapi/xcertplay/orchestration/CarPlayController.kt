@@ -52,6 +52,7 @@ import com.shilapi.xcertplay.network.ExistingWifiManager
 import com.shilapi.xcertplay.network.HotspotAddressPolicy
 import com.shilapi.xcertplay.network.HotspotAddressRecovery
 import com.shilapi.xcertplay.network.WifiP2pGroupManager
+import com.shilapi.xcertplay.network.WifiScanObserver
 import com.shilapi.xcertplay.network.WifiScanPause
 import com.shilapi.xcertplay.network.WirelessHotspotInfo
 import com.shilapi.xcertplay.network.WirelessHotspotBackend
@@ -282,6 +283,7 @@ class CarPlayController(
 
     @Volatile private var hotspot: WirelessHotspotManager? = null
     @Volatile private var wifiScanPause: WifiScanPause? = null
+    @Volatile private var wifiScanObserver: WifiScanObserver? = null
     @Volatile private var bonjour: CarPlayBonjour? = null
     private val wirelessResourceLock = Any()
     private val wirelessFailureReported = AtomicBoolean(false)
@@ -379,6 +381,8 @@ class CarPlayController(
                 }
             }
             activeSession = session
+            // Passive scan/radio watch for the video gap log; runs for P2P and MANUAL alike.
+            startWifiScanObserver()
             val btPrefs = appContext.getSharedPreferences("xcertplay_airplay", android.content.Context.MODE_PRIVATE)
             if (btPrefs.getBoolean("bt_suspend_during_carplay", false)) {
                 // close() marks [closed], and a closing session marks itself before onSessionEnded
@@ -400,6 +404,7 @@ class CarPlayController(
             if (currentCornerMask?.session === session) currentCornerMask = null
             if (activeSession === session) {
                 activeSession = null
+                stopWifiScanObserver()
                 synchronized(albumReplayLock) { initialArtworkReplay = null }
                 BydNavigationOutputs.endNow(preserveTurnOverlay = !closed && config.transport == CarPlayTransport.WIRELESS)
                 BydBluetoothSuspend.resume(appContext, this@CarPlayController) { debugLog(it) }
@@ -745,6 +750,8 @@ class CarPlayController(
                         closeBestEffort("wireless stack") { closeWirelessStack(service) }
                         closeBestEffort("Wi-Fi scan pause") { wifiScanPause?.close() }
                         wifiScanPause = null
+                        closeBestEffort("Wi-Fi scan observer") { wifiScanObserver?.close() }
+                        wifiScanObserver = null
                     } else {
                         closeBestEffort("CSM") { csm?.close() }
                         csm = null
@@ -2609,6 +2616,20 @@ class CarPlayController(
             return@synchronized
         }
         (wifiScanPause ?: WifiScanPause(appContext, ::debugLog).also { wifiScanPause = it }).pause()
+    }
+
+    /**
+     * Starts the passive scan/radio watch for the video gap log. Kept across reconnects
+     * within this controller; a replacement session re-activating is a no-op, and the
+     * observer only stops when the active session ends with no replacement.
+     */
+    private fun startWifiScanObserver() {
+        (wifiScanObserver ?: WifiScanObserver(appContext, ::debugLog).also { wifiScanObserver = it }).start()
+    }
+
+    private fun stopWifiScanObserver() {
+        wifiScanObserver?.close()
+        wifiScanObserver = null
     }
 
     private fun selectWirelessBluetoothDevice(adapter: BluetoothAdapter): BluetoothDevice {
