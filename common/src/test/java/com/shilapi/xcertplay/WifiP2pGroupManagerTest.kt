@@ -125,6 +125,16 @@ class WifiP2pGroupManagerTest {
         assertNull(memory.getString("confirmed", null))
     }
 
+    @Test fun closeLogsWifiAndGroupStateAroundRemoveGroup() {
+        val logs = mutableListOf<String>()
+        WifiP2pGroupManager(context, logs::add).use { manager ->
+            background { manager.start(5000) }
+        }
+        assertEquals(1, radio.removals)
+        assertTrue(logs.any { it.contains("Wi-Fi P2P removeGroup begin wifiEnabled=true") })
+        assertTrue(logs.any { it.contains("Wi-Fi P2P removeGroup end removed") && it.contains("wifiEnabled=true") })
+    }
+
     @Test fun confirmedTwoGhzConfigurationSurvivesManagerRecreationAndGoesFirst() {
         radio.fixed24Only = true
         WifiP2pGroupManager(context).use { manager ->

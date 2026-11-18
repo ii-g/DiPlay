@@ -15,6 +15,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowLog
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [29])
@@ -71,5 +72,25 @@ class CarPlayBonjourProbeLineTest {
     @Test fun statusLineWithLongReasonPhraseIsReturned() {
         val line = "HTTP/1.1 200 " + "x".repeat(2000)
         assertEquals(line, probe { it.getOutputStream().write("$line\r\n".toByteArray()) }.getOrThrow())
+    }
+
+    @Test fun closeLogsPerStepTimingAndRecordsItInTheSnapshot() {
+        ShadowLog.clear()
+        val bonjour = CarPlayBonjour(
+            org.robolectric.RuntimeEnvironment.getApplication(),
+            AirPlayConfig("test", "02:00:00:00:00:02", "02:00:00:00:00:02", "366.0",
+                main = AirPlayDisplayConfig(1280, 720)),
+            AirPlayIdentity(ByteArray(32), byteArrayOf(1), "p"),
+        )
+        assertTrue(bonjour.diagnosticSnapshot().contains("bonjourClose=not_closed"))
+        bonjour.close()
+        val messages = ShadowLog.getLogsForTag("xcertplay-bonjour").map { it.msg }
+        assertTrue(messages.any {
+            it.contains("Bonjour close totalMs=") && it.contains("unregisterMs=") &&
+                it.contains("jmdnsMs=[]") && it.contains("workerJoinMs=")
+        })
+        val snapshot = bonjour.diagnosticSnapshot()
+        assertTrue(snapshot.contains("bonjourClose=totalMs="))
+        assertTrue(snapshot.contains("workerJoinMs="))
     }
 }

@@ -170,7 +170,7 @@ class CarPlayBonjour(
         "bonjourAdded=${addedCount.get()} bonjourResolved=${resolvedCount.get()} " +
             "bonjourAddressMismatch=${addressMismatchCount.get()} connectProbes=${probeCount.get()} " +
             "connectProbe2xx=${successfulProbeCount.get()} lastProbe=${lastProbe.get()} " +
-            "mdnsFamilies=$publishedFamilies"
+            "mdnsFamilies=$publishedFamilies bonjourClose=${lastCloseSummary ?: "not_closed"}"
     private val multicastLock = (context.applicationContext ?: context)
         .getSystemService(WifiManager::class.java)
         .createMulticastLock("carplay-bonjour").apply { setReferenceCounted(false) }
@@ -178,6 +178,7 @@ class CarPlayBonjour(
     private var started = false
     @Volatile
     private var closed = false
+    @Volatile private var lastCloseSummary: String? = null
     private var registrationRequested = false
     private var discoveryRequested = false
     @Volatile
@@ -325,7 +326,10 @@ class CarPlayBonjour(
                 }
                 worker?.interrupt()
                 worker = null
-                interfaceMdns.forEach { dns -> runCatching { dns.close() } }
+                // Second JmDNS close site (the first is close()): time it the same way so a
+                // slow start-failure cleanup is distinguishable from a slow close().
+                val jmdnsMs = interfaceMdns.map { dns -> timedMs { runCatching { dns.close() } } }
+                Log.i(TAG, "Bonjour start failed jmdnsCloseMs=$jmdnsMs")
                 interfaceMdns.clear()
                 publishedFamilies = "none"
                 if (multicastLock.isHeld) multicastLock.release()
@@ -335,20 +339,25 @@ class CarPlayBonjour(
     }
 
     override fun close() {
+        val closeStarted = System.nanoTime()
         val workerToJoin: Thread?
         val dnsToClose: List<JmDNS>
+        var unregisterMs = 0L
+        var stopDiscoveryMs = 0L
+        var socketMs = 0L
+        var multicastMs = 0L
         synchronized(lifecycleLock) {
             if (closed) return
             closed = true
             if (registrationRequested) {
                 registrationRequested = false
-                runCatching { nsdManager.unregisterService(registrationListener) }
+                unregisterMs = timedMs { runCatching { nsdManager.unregisterService(registrationListener) } }
             }
             if (discoveryRequested) {
                 discoveryRequested = false
-                runCatching { nsdManager.stopServiceDiscovery(discoveryListener) }
+                stopDiscoveryMs = timedMs { runCatching { nsdManager.stopServiceDiscovery(discoveryListener) } }
             }
-            activeSocket?.let { socket -> runCatching { socket.close() } }
+            activeSocket?.let { socket -> socketMs = timedMs { runCatching { socket.close() } } }
             activeSocket = null
             services.clear()
             interfaceServices.clear()
@@ -359,10 +368,18 @@ class CarPlayBonjour(
             workerToJoin = worker
             worker = null
             workerToJoin?.interrupt()
-            if (multicastLock.isHeld) multicastLock.release()
+            if (multicastLock.isHeld) multicastMs = timedMs { multicastLock.release() }
         }
-        dnsToClose.forEach { dns -> runCatching { dns.close() } }
+        // The 11s seen in the field is the whole Bonjour resource, not JmDNS.close() alone
+        // (3ms in one attempt), so every step is timed separately, JmDNS per instance.
+        val jmdnsMs = dnsToClose.map { dns -> timedMs { runCatching { dns.close() } } }
+        val joinStarted = System.nanoTime()
         workerToJoin?.let(::joinWorker)
+        val joinMs = (System.nanoTime() - joinStarted) / 1_000_000
+        lastCloseSummary = "totalMs=${(System.nanoTime() - closeStarted) / 1_000_000} " +
+            "unregisterMs=$unregisterMs stopDiscoveryMs=$stopDiscoveryMs socketMs=$socketMs " +
+            "jmdnsMs=$jmdnsMs multicastMs=$multicastMs workerJoinMs=$joinMs"
+        Log.i(TAG, "Bonjour close $lastCloseSummary")
     }
 
     @Suppress("DEPRECATION")
@@ -658,6 +675,13 @@ class CarPlayBonjour(
         } catch (_: InterruptedException) {
             Thread.currentThread().interrupt()
         }
+    }
+
+    /** Runs [block] and returns its duration in milliseconds; diagnostics only. */
+    private inline fun timedMs(block: () -> Unit): Long {
+        val start = System.nanoTime()
+        block()
+        return (System.nanoTime() - start) / 1_000_000
     }
 
     private companion object {

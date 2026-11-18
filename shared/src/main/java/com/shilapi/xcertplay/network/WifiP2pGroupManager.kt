@@ -871,9 +871,14 @@ class WifiP2pGroupManager(
     private fun removeGroup(channel: WifiP2pManager.Channel, waitForCallback: Boolean,
         expectedName: String? = observedCreatedName ?: requestedName) {
         val latch = CountDownLatch(1)
+        // The existing log already pins wifiEnabled=false ~7s before removeGroup ran, which
+        // weakens the removeGroup hypothesis; these lines exist to settle it, not confirm it.
+        // Timestamps come from the diagnostic channel (logcat + the session file log).
+        diagnostic("Wi-Fi P2P removeGroup begin wifiEnabled=${wifiEnabled()} savedGroup=${expectedName ?: "unknown"} created=$created waitForCallback=$waitForCallback")
         try {
             p2pManager.requestGroupInfo(channel) { current ->
                 if (current == null) {
+                    diagnostic("Wi-Fi P2P removeGroup end group=absent wifiEnabled=${wifiEnabled()}")
                     latch.countDown()
                     return@requestGroupInfo
                 }
@@ -888,11 +893,12 @@ class WifiP2pGroupManager(
                 }
                 p2pManager.removeGroup(channel, object : WifiP2pManager.ActionListener {
                     override fun onSuccess() {
+                        diagnostic("Wi-Fi P2P removeGroup end removed group=$expectedName wifiEnabled=${wifiEnabled()}")
                         latch.countDown()
                     }
 
                     override fun onFailure(reason: Int) {
-                        diagnostic("Wi-Fi P2P remove rejected code=$reason reason=${failureReason(reason)}")
+                        diagnostic("Wi-Fi P2P remove rejected code=$reason reason=${failureReason(reason)} wifiEnabled=${wifiEnabled()}")
                         latch.countDown()
                     }
                 })
@@ -903,11 +909,17 @@ class WifiP2pGroupManager(
         }
         if (!waitForCallback) return
         try {
-            latch.await(REMOVE_GROUP_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)
+            if (!latch.await(REMOVE_GROUP_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)) {
+                diagnostic("Wi-Fi P2P removeGroup end timeout wifiEnabled=${wifiEnabled()}")
+            }
         } catch (interrupted: InterruptedException) {
             Thread.currentThread().interrupt()
         }
     }
+
+    /** Best-effort Wi-Fi state at removeGroup time; null when WifiManager is unavailable. */
+    private fun wifiEnabled(): Boolean? =
+        runCatching { appContext.getSystemService(WifiManager::class.java)?.isWifiEnabled }.getOrNull()
 
     private fun waitNanos(nanos: Long) {
         val millis = nanos / NANOS_PER_MILLISECOND

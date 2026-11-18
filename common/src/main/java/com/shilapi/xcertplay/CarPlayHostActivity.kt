@@ -800,10 +800,14 @@ open class CarPlayHostActivity : ComponentActivity() {
         }
 
         override fun onSurfaceTextureDestroyed(texture: SurfaceTexture): Boolean {
+            // Breadcrumb for the open question of why the video surface dies while the session
+            // is live: the framework gives no reason, so record the state that distinguishes
+            // teardown (finishing/destroyed/shuttingDown) from a config change from a
+            // live-session destroy. `current=false` means a stale texture, not the live one.
+            appendLog("Texture surface destroyed current=${currentSurfaceTexture === texture} sessionActive=${activeAirPlaySession != null} sink=${sink != null} finishing=$isFinishing destroyed=$isDestroyed changingConfig=$isChangingConfigurations shuttingDown=${shuttingDown.get()}")
             if (currentSurfaceTexture !== texture) return true
             currentSurface?.let(videoSurfaceOwner::clear)
             currentSurfaceTexture = null
-            appendLog("Texture surface destroyed")
             return true
         }
 
@@ -834,6 +838,11 @@ open class CarPlayHostActivity : ComponentActivity() {
         }
 
         override fun surfaceDestroyed(holder: SurfaceHolder) {
+            // Breadcrumb for the open question of why the video surface dies while the session
+            // is live: the framework gives no reason, so record the state that distinguishes
+            // teardown (finishing/destroyed/shuttingDown) from a config change from a
+            // live-session destroy.
+            appendLog("SurfaceView video surface destroyed holderMatches=${holder === fallbackVideoView?.holder} sessionActive=${activeAirPlaySession != null} sink=${sink != null} finishing=$isFinishing destroyed=$isDestroyed changingConfig=$isChangingConfigurations shuttingDown=${shuttingDown.get()}")
             val surface = holder.surface
             captureLastPicture()
             // The SurfaceHolder contract: nothing may render to the surface once this returns. Every decoder
