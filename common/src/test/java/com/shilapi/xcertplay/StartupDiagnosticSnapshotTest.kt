@@ -62,4 +62,47 @@ class StartupDiagnosticSnapshotTest {
         BootReceiver().onReceive(app, Intent("custom.intent.token=secret"))
         assertTrue(StartupDiagnosticSnapshot.report(app).contains("received=false"))
     }
+
+    @Test fun serviceResultRetriesAndActivitySeenAreRecordedSeparately() {
+        StartupDiagnosticSnapshot.received(app, true)
+        StartupDiagnosticSnapshot.serviceResult(app)
+        StartupDiagnosticSnapshot.retryAttempt(app, 1)
+        val unseen = StartupDiagnosticSnapshot.report(app)
+        assertTrue(unseen.contains("serviceResult=service-started"))
+        assertTrue(unseen.contains("activityShown=false"))
+        assertTrue(unseen.contains("retries=1@"))
+        assertTrue(unseen.contains("=startActivity-returned"))
+        StartupDiagnosticSnapshot.markActivitySeen(app)
+        assertTrue(StartupDiagnosticSnapshot.report(app).contains("activityShown=true"))
+    }
+
+    @Test fun markActivitySeenKeepsTheFirstResumeOnly() {
+        StartupDiagnosticSnapshot.received(app, true)
+        app.getSharedPreferences("diplay_startup_diagnostics", Context.MODE_PRIVATE).edit()
+            .putLong("activitySeenAt", 12345L).commit()
+        StartupDiagnosticSnapshot.markActivitySeen(app)
+        assertEquals(12345L, StartupDiagnosticSnapshot.activitySeenAt(app))
+    }
+
+    @Test fun retryFailureRecordsOnlyItsClass() {
+        StartupDiagnosticSnapshot.received(app, true)
+        StartupDiagnosticSnapshot.retryAttempt(app, 1, SecurityException("Jane's phone token=private-data"))
+        val report = StartupDiagnosticSnapshot.report(app)
+        assertTrue(report.contains("retries=1@"))
+        assertTrue(report.contains("failed:SecurityException"))
+        assertFalse(report.contains("Jane")); assertFalse(report.contains("private-data"))
+    }
+
+    @Test fun secondBootResetsServiceRetryAndSeenEvidence() {
+        StartupDiagnosticSnapshot.received(app, true)
+        StartupDiagnosticSnapshot.serviceResult(app)
+        StartupDiagnosticSnapshot.retryAttempt(app, 1)
+        StartupDiagnosticSnapshot.markActivitySeen(app)
+        StartupDiagnosticSnapshot.received(app, true)
+        val report = StartupDiagnosticSnapshot.report(app)
+        assertTrue(report.contains("serviceResult=not-attempted"))
+        assertTrue(report.contains("activityShown=false"))
+        assertTrue(report.contains("retries=none"))
+        assertEquals(0, StartupDiagnosticSnapshot.retryCount(app))
+    }
 }
