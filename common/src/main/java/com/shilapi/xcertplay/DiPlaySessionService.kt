@@ -10,11 +10,18 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
+import android.util.Log
 import com.shilapi.xcertplay.host.R
 
 /** Keeps an explicitly started connection alive when another car app is in the foreground. */
 class DiPlaySessionService : Service() {
+    private val bootHandler = Handler(Looper.getMainLooper())
+    private var bootWatchScheduled = false
+    private var bootRetriesMade = 0
+
     override fun onBind(intent: Intent?): IBinder? = null
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
@@ -52,6 +59,7 @@ class DiPlaySessionService : Service() {
             }
             startForeground(1, notification, types)
         } else startForeground(1, notification)
+        if (intent?.action == ACTION_BOOT) scheduleBootRetryWatch()
         return START_NOT_STICKY
     }
     override fun onTaskRemoved(rootIntent: Intent?) {
@@ -60,8 +68,57 @@ class DiPlaySessionService : Service() {
         CarPlayBackgroundSession.stop()
         stopSelf()
     }
+    override fun onDestroy() {
+        bootHandler.removeCallbacksAndMessages(null)
+        super.onDestroy()
+    }
+
+    /**
+     * Watches the boot auto-start from the foreground service: the BOOT_COMPLETED launch can
+     * return without the firmware ever showing the app, so this re-checks after a delay and
+     * relaunches DiPlayActivity while it stays hidden, at most [BootLaunchRetry.MAX_RETRIES]
+     * times. When the activity appears, or the retries run out, the watch ends; the service
+     * then stops itself unless a session started meanwhile (the normal session path owns the
+     * service from then on).
+     */
+    private fun scheduleBootRetryWatch() {
+        if (bootWatchScheduled) return
+        bootWatchScheduled = true
+        bootRetriesMade = 0
+        BootLaunchRetry.delayForRetry(0)?.let { delay ->
+            bootHandler.postDelayed({ runBootRetryCheck() }, delay)
+        }
+    }
+
+    private fun runBootRetryCheck() {
+        val seenAt = StartupDiagnosticSnapshot.activitySeenAt(this)
+        if (!BootLaunchRetry.shouldRetry(seenAt, bootRetriesMade)) {
+            finishBootWatch()
+            return
+        }
+        val attempt = bootRetriesMade + 1
+        try {
+            startActivity(BootReceiver.bootLaunchIntent(this))
+            StartupDiagnosticSnapshot.retryAttempt(this, attempt)
+        } catch (error: RuntimeException) {
+            StartupDiagnosticSnapshot.retryAttempt(this, attempt, error)
+            Log.w(TAG, "Boot retry $attempt could not launch DiPlayActivity", error)
+        }
+        bootRetriesMade = attempt
+        BootLaunchRetry.delayForRetry(bootRetriesMade)?.let { delay ->
+            bootHandler.postDelayed({ runBootRetryCheck() }, delay)
+        } ?: finishBootWatch()
+    }
+
+    private fun finishBootWatch() {
+        bootHandler.removeCallbacksAndMessages(null)
+        if (!CarPlayBackgroundSession.hasSession()) stopSelf()
+    }
+
     companion object {
         const val ACTION_STOP = "com.shihab.diplay.DISCONNECT"
+        const val ACTION_BOOT = "com.shihab.diplay.BOOT_START"
         private const val CHANNEL = "diplay_connection"
+        private const val TAG = "xcertplay-boot"
     }
 }

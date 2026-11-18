@@ -531,6 +531,8 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
 
     override fun onResume() {
         super.onResume()
+        // First resume since boot proves the boot launch showed the app; later resumes change nothing.
+        StartupDiagnosticSnapshot.markActivitySeen(this)
         WheelKeyService.restoreIfNeeded(this)
         applyFullscreenMode()
         // Returning from another activity can bring the head unit's own density back.
