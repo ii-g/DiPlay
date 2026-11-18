@@ -9,6 +9,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
@@ -61,6 +62,23 @@ class StartupDiagnosticSnapshotTest {
     @Test fun unrelatedBroadcastsDoNotCreateOrOverwriteBootEvidence() {
         BootReceiver().onReceive(app, Intent("custom.intent.token=secret"))
         assertTrue(StartupDiagnosticSnapshot.report(app).contains("received=false"))
+    }
+
+    @Test fun enabledBootAlsoStartsTheSessionServiceForTheRetryWatch() {
+        AirPlayPersistence.saveAutoStartOnBoot(app, true)
+        BootReceiver().onReceive(app, Intent(Intent.ACTION_BOOT_COMPLETED))
+        // nextStartedService pops the queue, so it is read once per test.
+        val service = shadowOf(app).nextStartedService
+        assertNotNull(service)
+        assertEquals(DiPlaySessionService::class.java.name, service!!.component!!.className)
+        assertEquals(DiPlaySessionService.ACTION_BOOT, service.action)
+        assertTrue(StartupDiagnosticSnapshot.report(app).contains("serviceResult=service-started"))
+    }
+
+    @Test fun disabledBootStartsNeitherActivityNorService() {
+        BootReceiver().onReceive(app, Intent(Intent.ACTION_BOOT_COMPLETED))
+        assertNull(shadowOf(app).nextStartedService)
+        assertTrue(StartupDiagnosticSnapshot.report(app).contains("serviceResult=not-attempted"))
     }
 
     @Test fun serviceResultRetriesAndActivitySeenAreRecordedSeparately() {
