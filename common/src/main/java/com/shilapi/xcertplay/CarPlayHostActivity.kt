@@ -1236,6 +1236,10 @@ open class CarPlayHostActivity : ComponentActivity() {
         if (!menuOpen) {
             displayScalePercent = AirPlayPersistence.loadDisplayScalePercent(this)
             displayScaleTenths = CarPlayDisplayScale.sanitize((displayScalePercent + 5) / 10)
+            // The size is re-read here like the scale: toggling weak-device mode in Settings
+            // changes the stored size while this screen is paused, and the session negotiates
+            // from this field, so without this it kept negotiating the stale size.
+            widthPhysicalMm = AirPlayPersistence.loadWidthPhysicalMm(this)
             updateResolutionMenu()
         }
         if (intent.getBooleanExtra("picture_controls", false)) {
