@@ -5340,6 +5340,7 @@ open class CarPlayHostActivity : ComponentActivity() {
             mainVideoFrameRate = fps,
             vendorLowLatencyDecoder = AirPlayPersistence.loadLowLatencyDecoder(this),
             mtkDecoderTuningEnabled = AirPlayPersistence.loadMtkDecoderTuning(this),
+            sprdDecoderTuningEnabled = AirPlayPersistence.loadSprdDecoderTuning(this),
             navigationPromptAudioFocus = AirPlayPersistence.loadNavigationPromptAudioFocus(this),
         )
     }
