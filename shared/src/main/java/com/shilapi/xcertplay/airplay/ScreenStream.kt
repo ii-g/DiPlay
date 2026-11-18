@@ -79,8 +79,11 @@ class ScreenStream(
             }
             onDiagnostic("Video TCP receive buffer original=$originalBufferBytes requested=$VIDEO_RECEIVE_BUFFER_BYTES actual=${runCatching { accepted.receiveBufferSize }.getOrDefault(0)}")
             run(accepted)
-        } catch (error: Exception) {
-            if (!closed.get()) listener.onClosed(error)
+        } catch (error: Throwable) {
+            if (!closed.get()) {
+                Log.e(TAG, "video accept failed: ${error.javaClass.simpleName}", error)
+                listener.onClosed(error)
+            }
         }
     }
 
@@ -100,7 +103,8 @@ class ScreenStream(
                 onMessage(header, body, stats, arrivalNanos)
                 stats.processed()
             }
-        } catch (error: Exception) {
+        } catch (error: Throwable) {
+            Log.e(TAG, "video receive failed: ${error.javaClass.simpleName}", error)
             failure = error
         } finally {
             stats.flush(ended = true)
