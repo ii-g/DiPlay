@@ -170,6 +170,7 @@ open class CarPlayHostActivity : ComponentActivity() {
     private var delayedDoubleSiri: PendingAssignedSiriDoublePress? = null
     private val legacySiriPresses = mutableSetOf<Triple<Int, Int, Int>>()
     private val startupRetryBudget = WirelessStartupRetryBudget()
+    private val sessionFlapGuard by lazy { SessionFlapGuard.fromContext(this) }
     private var startupRetryStopped = false
     private var startupRetryButton: View? = null
     private var startupFailureGeneration = -1
@@ -2101,6 +2102,7 @@ open class CarPlayHostActivity : ComponentActivity() {
                 if (!CarPlayBackgroundSession.isOwner(this@CarPlayHostActivity) ||
                     shuttingDown.get() || menuOpen || handshakeResetInProgress) return@setOnClickListener
                 startupRetryBudget.manualRetry()
+                sessionFlapGuard.clear()
                 startupRetryStopped = false
                 reconnectAttempts = 0
                 visibility = View.GONE
@@ -5429,6 +5431,7 @@ open class CarPlayHostActivity : ComponentActivity() {
                     }
                     if (controllerGeneration != restartGeneration || startupRetryStopped) return@runOnUiThread
                     startupRetryBudget.disconnected()
+                    sessionFlapGuard.recordDeath()
                     activeAirPlaySession = null
                     clusterSurface?.let { sink?.clearSurface(SCREEN_TYPE_ALT, it) }
                     clearIphoneCornerMask()
@@ -5453,6 +5456,7 @@ open class CarPlayHostActivity : ComponentActivity() {
                     callPopupSessionReady = false
                     updateCallPopupGuard()
                     startupRetryBudget.disconnected()
+                    sessionFlapGuard.recordDeath()
                     if (menuOpen) {
                         recoveryPendingAfterMenu = true
                         return@runOnUiThread
@@ -6067,6 +6071,16 @@ open class CarPlayHostActivity : ComponentActivity() {
         lossSinceControlRunning = true
         if (menuOpen) recoveryPendingAfterMenu = true
         if (shuttingDown.get() || menuOpen || handshakeResetInProgress || startupRetryStopped) return
+        if (sessionFlapGuard.isTripped()) {
+            // S11: three session deaths within ten minutes stop automatic reconnects, even
+            // after Activity recreation — the persisted deaths outlive the retry budget.
+            startupRetryStopped = true
+            startupRetryButton?.visibility = View.VISIBLE
+            setConnectionStage("$reason\n${getString(R.string.wireless_startup_retries_exhausted)}",
+                "$englishReason\n${englishResources.getString(R.string.wireless_startup_retries_exhausted)}")
+            appendLog("session flap cap tripped generation=$restartGeneration reason=$reason")
+            return
+        }
         if (reconnectScheduled) return
         val startupDelay = if (startupFailure != null && startupFailure.retryable)
             startupRetryBudget.nextDelayMillis() else null
@@ -6331,6 +6345,7 @@ open class CarPlayHostActivity : ComponentActivity() {
         recoveryPendingAfterMenu = false
         if (reconnect) {
             startupRetryBudget.manualRetry()
+            sessionFlapGuard.clear()
             startupRetryStopped = false
         }
         if (failure?.startupFailure != null && !reconnect) {
@@ -6986,17 +7001,7 @@ open class CarPlayHostActivity : ComponentActivity() {
         const val CONFIGURATION_POLL_INTERVAL_MILLIS = 2_000L
         const val RECONNECT_DELAY_MILLIS = 2_000L
         const val IAP_TUNNEL_RECONNECT_DELAY_MILLIS = 15_000L
-        // Teardown budget for the old controller, used by both awaitClosed sites
-        // (restart and shutdown). The teardown thread runs Bonjour close — JmDNS close
-        // capped at 3s plus the worker join capped at 2s — and then waits up to 2s for
-        // the controller executor, so the bounded worst case is ~7s plus the remaining
-        // fast Binder/close steps; 10s covers it with slack. The old 4s budget expired
-        // in the field (teardownWaitCompleted=false at 4078ms) and the next attempt
-        // started while the previous teardown still held its resources. A larger budget
-        // only delays a reconnect while teardown is actually slow: in the healthy case
-        // awaitClosed returns as soon as teardown finishes, and the wait runs on the
-        // teardown executor, never on the UI thread.
-        const val CONTROLLER_CLOSE_TIMEOUT_MILLIS = 10_000L
+        const val CONTROLLER_CLOSE_TIMEOUT_MILLIS = 4_000L
         const val AUDIO_CAPTURE_MARKER = "audio-capture.enabled"
         const val AUDIO_CAPTURE_DIRECTORY = "audio-captures"
         const val PROTOCOL_TRACE_PREFIX = "TRACE "
