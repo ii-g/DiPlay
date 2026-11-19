@@ -36,6 +36,11 @@
         </intent>
     </queries>
     <application>
+        <!-- Trial: Zlink phone-link feature flags (same names/values Zlink declares),
+             so the head unit's "Phone link APP" list may offer DiPlay. -->
+        <meta-data android:name="CarPlayEnable" android:value="true" />
+        <meta-data android:name="AutoEnable" android:value="true" />
+        <meta-data android:name="HiCarEnable" android:value="true" />
         <provider
             android:name="com.shilapi.xcertplay.CrashRecordInstaller"
             android:authorities="${applicationId}.crash-record"
@@ -66,6 +71,12 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- Trial: Zlink phone-link action, so the head unit's "Phone link APP"
+                 list may offer DiPlay (same action Zlink declares on its launcher). -->
+            <intent-filter>
+                <action android:name="zjinnova.android.intent.action.ZLINK_MAIN" />
+                <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
         <service android:name="com.shilapi.xcertplay.DiPlaySessionService"
