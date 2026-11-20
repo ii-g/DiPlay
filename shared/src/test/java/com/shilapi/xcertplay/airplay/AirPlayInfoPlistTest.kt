@@ -471,4 +471,21 @@ class AirPlayInfoPlistTest {
             assertEquals(format(base, audioType), format(on, audioType))
         }
     }
+
+    @Test
+    fun initialVolumeIsDeclaredOnlyWhenKnownAndAudioIsOffered() {
+        val base = AirPlayConfig(
+            deviceName = "test",
+            deviceId = "02:00:00:00:00:02",
+            btMac = "02:00:00:00:00:02",
+            sourceVersion = "366.0",
+            main = AirPlayDisplayConfig(widthPixels = 1280, heightPixels = 720),
+        )
+        assertFalse(AirPlayInfoPlist.build(base).containsKey("initialVolume"))
+        assertEquals(-14f, AirPlayInfoPlist.build(base.copy(initialVolumeDb = -14f))["initialVolume"])
+        assertFalse(
+            AirPlayInfoPlist.build(base.copy(initialVolumeDb = -14f, disableAudioOutput = true))
+                .containsKey("initialVolume"),
+        )
+    }
 }

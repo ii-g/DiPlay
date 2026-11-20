@@ -36,6 +36,13 @@ interface AirPlaySessionListener {
     fun onDeviceInfo(session: AirPlaySession, info: AirPlayDeviceInfo) {}
     fun onHostUiRequested(session: AirPlaySession) {}
     fun onCommand(session: AirPlaySession, type: String, params: Map<String, Any?>) {}
+    /**
+     * AirPlay SET_PARAMETER "volume: <dB>" from the iPhone, if it ever sends one during
+     * CarPlay. Returns the applied music-stream step and its maximum (e.g. 8/15), or null
+     * when nothing was applied. The session logs the receipt either way; a missing log
+     * line means the phone sent no SET_PARAMETER at all.
+     */
+    fun onAirPlayVolume(session: AirPlaySession, volumeDb: Float): AirPlayVolumeApplied? = null
     /** Video in car: a playback message on a remote control session (X-Apple-StreamID). */
     fun onRemoteControlMessage(session: AirPlaySession, streamId: Long, message: Map<String, Any?>) {}
     /** Video in car: requestUI "videoplayback:", the iPhone asks the car to show its video player. */
@@ -551,6 +558,21 @@ class AirPlaySession(
         when (request.method) {
             "SETUP" -> return handleSetup(request)
             "SET_PARAMETER" -> {
+                // AirPlay volume from the iPhone, if it ever sends one during CarPlay: a
+                // plain-text body ("volume: -11.123877"). Parsed alongside the corner-mask
+                // body below; a binary-plist body simply yields no volume line and falls
+                // through unchanged. Logged on every SET_PARAMETER so a missing line means
+                // the phone sent nothing, not that logging is broken.
+                val volumeDb = AirPlayVolume.parseVolumeDb(request.body)
+                val applied = volumeDb?.let { db ->
+                    runCatching { listener.onAirPlayVolume(this, db) }
+                        .onFailure { Log.w(TAG, "airplay volume callback failed", it) }
+                        .getOrNull()
+                }
+                debugLog(
+                    "airplay SET_PARAMETER volume=${volumeDb?.toString() ?: "absent"} " +
+                        "applied=${applied?.let { "${it.step}/${it.max}" } ?: "none"}",
+                )
                 // iOS can replace the mask when the display changes; never decode PNG on RTSP.
                 if (config.main.useIphoneCornerMask && request.body.size <=
                     IPhoneCornerMaskWireLimit.MAX_PNG_BYTES + 64 * 1024) {

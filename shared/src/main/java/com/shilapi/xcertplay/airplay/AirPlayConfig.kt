@@ -105,6 +105,12 @@ data class AirPlayConfig(
      * restricted the same way, because the iPhone picks one format for both directions.
      */
     val callAtCallRate: Boolean = false,
+    /**
+     * AirPlay volume the receiver advertises in /info (dB: -144 mute, -30..0), read from the
+     * music stream when the config is built. Null when the level is unknown; /info then
+     * omits the key, as before.
+     */
+    val initialVolumeDb: Float? = null,
 )
 
 /** The offer, SETUP and controls must all honor the user's audio-output setting. */

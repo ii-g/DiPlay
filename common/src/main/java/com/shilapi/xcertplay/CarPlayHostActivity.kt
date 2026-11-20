@@ -29,6 +29,7 @@ import android.graphics.Typeface
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.LayerDrawable
+import android.media.AudioManager
 import android.media.MediaCodecList
 import android.media.MediaFormat
 import android.net.Uri
@@ -91,6 +92,7 @@ import com.shilapi.xcertplay.airplay.CarPlayClusterDisplay
 import com.shilapi.xcertplay.airplay.AirPlaySafeArea
 import com.shilapi.xcertplay.airplay.AirPlaySession
 import com.shilapi.xcertplay.airplay.AirPlaySessionListener
+import com.shilapi.xcertplay.airplay.AirPlayVolume
 import com.shilapi.xcertplay.airplay.CarPlayMediaEngine
 import com.shilapi.xcertplay.airplay.SafeAreaRect
 import com.shilapi.xcertplay.host.R
@@ -5103,6 +5105,15 @@ open class CarPlayHostActivity : ComponentActivity() {
         appendLog(effectiveSummary)
         val carBluetoothAudio = AirPlayPersistence.loadCarBluetoothAudio(this)
         if (carBluetoothAudio) logCarBluetoothAudio()
+        // AirPlay volume: tell the iPhone the music stream's current level (dB) so a
+        // SET_PARAMETER "volume:" from the phone starts from the truth. Null when the
+        // stream is not offered (car Bluetooth audio) or the level is unreadable.
+        val initialVolumeDb: Float? = if (carBluetoothAudio) null else runCatching {
+            val audio = getSystemService(AudioManager::class.java) ?: return@runCatching null
+            val max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+            if (max <= 0) null
+            else AirPlayVolume.dbFromStep(audio.getStreamVolume(AudioManager.STREAM_MUSIC), max)
+        }.getOrNull()
         return AirPlayConfig(
             deviceName = "DiPlay",
             deviceId = DiPlayBootstrap.deviceId(airPlayIdentity),
@@ -5123,6 +5134,7 @@ open class CarPlayHostActivity : ComponentActivity() {
             speechWithout8And16Khz = AirPlayPersistence.loadSpeechWithout8And16Khz(this),
             callAtCallRate = AirPlayPersistence.loadCallAtCallRate(this),
             disableAudioOutput = carBluetoothAudio,
+            initialVolumeDb = initialVolumeDb,
         )
     }
 

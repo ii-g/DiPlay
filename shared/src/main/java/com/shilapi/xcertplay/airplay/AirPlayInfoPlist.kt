@@ -52,6 +52,9 @@ object AirPlayInfoPlist {
             info["audioLatencies"] = audioLatencies()
             info["audioFormats"] = audioFormats(config.entertainmentSampleRate, config.microphone, config.mainBufferedAudio, config.microphoneOpus,
                 config.speechWithout8And16Khz, config.callAtCallRate)
+            // AirPlay volume: the receiver's current level in dB. The iPhone only sends
+            // SET_PARAMETER "volume:" if the receiver declares it; without it, it never asks.
+            config.initialVolumeDb?.let { info["initialVolume"] = it }
         }
         info["extendedFeatures"] = listOf("vocoderInfo", "enhancedRequestCarUI")
         info["displays"] = displays
