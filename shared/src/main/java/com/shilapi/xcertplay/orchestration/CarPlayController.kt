@@ -15,6 +15,7 @@ import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
+import android.media.AudioManager
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -25,6 +26,8 @@ import android.provider.Settings
 import android.util.Log
 import com.shilapi.xcertplay.airplay.AirPlayListenerIdentity
 import com.shilapi.xcertplay.airplay.AirPlayTcpAccepted
+import com.shilapi.xcertplay.airplay.AirPlayVolume
+import com.shilapi.xcertplay.airplay.AirPlayVolumeApplied
 import com.shilapi.xcertplay.airplay.AirPlayConfig
 import com.shilapi.xcertplay.airplay.AirPlayContact
 import com.shilapi.xcertplay.airplay.AirPlayKnobState
@@ -476,6 +479,24 @@ class CarPlayController(
                 maybeCompleteWirelessHandoff()
             }
             uiListener?.onCommand(session, type, params)
+        }
+
+        // AirPlay volume from the iPhone (SET_PARAMETER "volume: <dB>"): apply it to the music
+        // stream with the same call the wheel keys use, and report the applied step so the
+        // session can log it. Not applied when the session is gone or CarPlay audio is not
+        // offered (car Bluetooth audio); the session logs that as applied=none.
+        override fun onAirPlayVolume(session: AirPlaySession, volumeDb: Float): AirPlayVolumeApplied? {
+            if (closed || session.isClosed || airPlayConfig.disableAudioOutput) return null
+            val audio = runCatching { appContext.getSystemService(AudioManager::class.java) }.getOrNull()
+                ?: return null
+            return runCatching {
+                val max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+                if (max <= 0) return null
+                val target = AirPlayVolume.stepFromDb(volumeDb, max)
+                audio.setStreamVolume(AudioManager.STREAM_MUSIC, target, AudioManager.FLAG_SHOW_UI)
+                val applied = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
+                if (applied == target) AirPlayVolumeApplied(applied, max) else null
+            }.getOrNull()
         }
 
         override fun onDebugLog(message: String) {
