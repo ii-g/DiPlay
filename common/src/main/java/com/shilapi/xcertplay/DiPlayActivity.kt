@@ -75,7 +75,6 @@ import com.shilapi.xcertplay.media.AmbientMusicController
 import com.shilapi.xcertplay.media.AmbientColorSource
 import com.shilapi.xcertplay.media.AmbientMusicSettings
 import com.shilapi.xcertplay.media.MtkDecoderTuning
-import com.shilapi.xcertplay.media.SprdDecoderTuning
 import com.shilapi.xcertplay.network.CarHotspotConfigRead
 import com.shilapi.xcertplay.network.CarHotspotConfigWrite
 import com.shilapi.xcertplay.network.CarHotspotSavedCredentials
@@ -214,7 +213,6 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
         UsbPermissionSetup.Operation(it.applicationContext)
     }
     internal var selectedMtkDecoderName: (String) -> String? = MtkDecoderTuning::selectedDecoderName
-    internal var selectedSprdDecoderName: (String) -> String? = SprdDecoderTuning::selectedDecoderName
     private var navigationStreamType = 14
     private var testToneTrack: AudioTrack? = null
     private var toneStop: Runnable? = null
@@ -2023,16 +2021,6 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
                     markReconnectNeeded()
                 }
             }
-            val sprdDecoder = if (hevc && AirPlayPersistence.loadHevcSoftwareDecoderEnabled(this)) null
-                else selectedSprdDecoderName(selectedMime)
-            if (sprdDecoder != null) {
-                toggle(card, getString(R.string.settings_sprd_decoder_tuning),
-                    getString(R.string.settings_sprd_decoder_tuning_description, sprdDecoder),
-                    AirPlayPersistence.loadSprdDecoderTuning(this)) {
-                    AirPlayPersistence.saveSprdDecoderTuning(this, it)
-                    markReconnectNeeded()
-                }
-            }
             toggle(card, getString(R.string.smooth_video), getString(R.string.smooth_video_description),
                 AirPlayPersistence.loadSmoothVideo(this)) {
                 AirPlayPersistence.saveSmoothVideo(this, it)
@@ -2050,8 +2038,8 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
                 AirPlayPersistence.saveLowLatencyDecoder(this, it)
                 markReconnectNeeded()
             }
-            // One switch for slow head units: it also moves the toggles above and below,
-            // so re-render to show their new state instead of leaving them stale.
+            // One switch for slow head units: it also moves the Direct video output toggle above,
+            // so re-render to show its new state instead of leaving it stale.
             toggle(card, getString(R.string.settings_weak_device_mode),
                 getString(R.string.settings_weak_device_mode_description),
                 AirPlayPersistence.loadWeakDeviceMode(this)) { enabled ->
@@ -3703,10 +3691,6 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
         card.addView(label(getString(R.string.settings_wifi_channel_scan_description), 14, MUTED).apply {
             setPadding(0, dp(10), 0, 0)
         })
-        card.addView(label(getString(R.string.wifi_direct_channel_summary,
-            wifiDirectChannelLabel(AirPlayPersistence.loadWifiP2pPreferredChannel(this))), 15, MUTED).apply {
-            setPadding(0, dp(10), 0, 0)
-        })
         wifiChannelScanResultLabel = label(
             wifiChannelScanSummary ?: "",
             15, MUTED,
@@ -3724,18 +3708,21 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
         if (recommended != null) {
             val current = AirPlayPersistence.loadWifiP2pPreferredChannel(this)
             if (current == WifiP2pChannels.AUTO || current == WifiP2pChannels.AUTO_5_GHZ ||
-                current == WifiP2pChannels.AUTO_2_4_GHZ || current >= 36) {
+                current >= 36) {
                 card.addView(label(getString(R.string.settings_wifi_channel_scan_band_change,
                     wifiDirectChannelLabel(current), recommended), 15, WARNING).apply {
                     setPadding(0, dp(10), 0, 0)
                 })
             }
-            wifiChannelScanApplyButton = button(getString(R.string.settings_wifi_channel_scan_apply, recommended), false) {
-                AirPlayPersistence.saveWifiP2pPreferredChannel(this, recommended)
-                markReconnectNeeded()
-                toast(getString(R.string.saved_for_your_next_connection))
+            if (recommended != current) {
+                wifiChannelScanApplyButton = button(getString(R.string.settings_wifi_channel_scan_apply, recommended), false) {
+                    AirPlayPersistence.saveWifiP2pPreferredChannel(this, recommended)
+                    markReconnectNeeded()
+                    render()
+                    toast(getString(R.string.saved_for_your_next_connection))
+                }
+                card.addView(wifiChannelScanApplyButton, matchButton(10, 60))
             }
-            card.addView(wifiChannelScanApplyButton, matchButton(10, 60))
         }
     }
 
@@ -4901,7 +4888,7 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
             AirPlayPersistence.loadBtSuspendDuringCarplay(this), enabled = !adbSwitchChangePending) {
             AirPlayPersistence.saveBtSuspendDuringCarplay(this, it)
             markReconnectNeeded()
-            if (it && BydBluetoothSuspend.adbNeededForPause()) checkAdbState(mayAsk = true)
+            if (it) checkAdbState(mayAsk = true)
         }
         if (AirPlayPersistence.loadBtSuspendDuringCarplay(this)) {
             val delays = listOf(5, 10, 15, 30)
@@ -6116,7 +6103,6 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
         appendLine("Saved video preference (may differ from active session): ${if (AirPlayPersistence.loadHevcEnabled(appContext)) "HEVC" else "H.264"}; ${AirPlayPersistence.loadFps(appContext)} fps")
         appendLine("Media-key audio focus: ${if (AirPlayPersistence.loadDisableMediaKeyAudioFocus(appContext)) "disabled" else "enabled"}")
         appendLine("MTK decoder tuning preference: ${if (AirPlayPersistence.loadMtkDecoderTuning(appContext)) "enabled" else "disabled"}")
-        appendLine("SPRD decoder tuning preference: ${if (AirPlayPersistence.loadSprdDecoderTuning(appContext)) "enabled" else "disabled"}")
         appendLine("Weak head-unit mode: ${if (AirPlayPersistence.loadWeakDeviceMode(appContext)) "enabled" else "disabled"}")
         appendLine("CarPlay size: ${AirPlayPersistence.loadWidthPhysicalMm(appContext).let { mm -> "${com.shilapi.xcertplay.airplay.CarPlaySize.exact(mm)?.label ?: "Custom"}, $mm mm" }}")
         appendLine("Saved resolution preference (may differ from active session): ${AirPlayPersistence.loadDisplayScalePercent(appContext)}%")

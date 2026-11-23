@@ -219,11 +219,6 @@ class AndroidMediaSink(
     private val vendorLowLatencyDecoder: Boolean = false,
     /** Opt-in MTK ACodec low-latency/no-reorder modes, with per-session automatic fallback. */
     private val mtkDecoderTuningEnabled: Boolean = false,
-    /**
-     * Opt-in Spreadtrum decoder tuning: a tuned configure attempt for the detected OMX.sprd
-     * decoder, with fallback to the default decoder in the same configure round.
-     */
-    private val sprdDecoderTuningEnabled: Boolean = false,
     /** Opt-in (#946): navigation prompts request duckable focus while the iPhone ducks audio. Needs [audioFocusEnabled]. */
     navigationPromptAudioFocus: Boolean = false,
 ) : MediaSink {
@@ -705,38 +700,26 @@ class AndroidMediaSink(
         }
     }
 
-    private fun newVideoDecoder(type: Int, surface: Surface?, statsLabel: String? = null, startImmediately: Boolean = true): VideoDecoder {
-        // Keep the experimental decoder tunings on the main CarPlay picture only. Mirrors and the
+    private fun newVideoDecoder(type: Int, surface: Surface?, statsLabel: String? = null, startImmediately: Boolean = true) = VideoDecoder(
+        type,
+        surface,
+        videoWidth,
+        videoHeight,
+        preferSoftwareHevcDecoder,
+        requestKeyFrame = { requestVideoRecovery(type) },
+        report = { videoDiagnosticHandlers[type]?.invoke(it) },
+        statsLabel = statsLabel,
+        onExit = ::onVideoDecoderExit,
+        // Only the main screen goes to the host's SurfaceView; mirrors and the cluster keep their path.
+        pacingDelayNanos = if (type == MAIN_SCREEN_TYPE && statsLabel == null) videoPacingDelayMillis * 1_000_000L else 0L,
+        operatingRate = videoOperatingRate(type, statsLabel, mainVideoFrameRate),
+        vendorLowLatency = vendorLowLatencyDecoder,
+        dedicatedOutputThread = vendorLowLatencyDecoder,
+        framesAtOnce = type == MAIN_SCREEN_TYPE && statsLabel == null && videoPacingDelayMillis > 0,
+        // Keep the experimental MTK mode on the main CarPlay picture only. Mirrors and the
         // cluster have separate timing and must retain their established decoder configuration.
-        // The decoder's mime is only known at configure time, so the existence check covers
-        // both mimes. It guards the backup-restore case: a unit with no Spreadtrum decoder
-        // must not get the output thread (and the tuning) from a restored preference, when
-        // there is no visible toggle to turn it off.
-        val sprdDecoderExists =
-            SprdDecoderTuning.selectedDecoderName(MediaFormat.MIMETYPE_VIDEO_AVC) != null ||
-                SprdDecoderTuning.selectedDecoderName(MediaFormat.MIMETYPE_VIDEO_HEVC) != null
-        val sprdTuning = sprdDecoderTuningEnabled && sprdDecoderExists &&
-            type == MAIN_SCREEN_TYPE && statsLabel == null
-        return VideoDecoder(
-            type,
-            surface,
-            videoWidth,
-            videoHeight,
-            preferSoftwareHevcDecoder,
-            requestKeyFrame = { requestVideoRecovery(type) },
-            report = { videoDiagnosticHandlers[type]?.invoke(it) },
-            statsLabel = statsLabel,
-            onExit = ::onVideoDecoderExit,
-            // Only the main screen goes to the host's SurfaceView; mirrors and the cluster keep their path.
-            pacingDelayNanos = if (type == MAIN_SCREEN_TYPE && statsLabel == null) videoPacingDelayMillis * 1_000_000L else 0L,
-            operatingRate = videoOperatingRate(type, statsLabel, mainVideoFrameRate),
-            vendorLowLatency = vendorLowLatencyDecoder,
-            dedicatedOutputThread = vendorLowLatencyDecoder || sprdTuning,
-            framesAtOnce = type == MAIN_SCREEN_TYPE && statsLabel == null && videoPacingDelayMillis > 0,
-            mtkDecoderTuningEnabled = mtkDecoderTuningEnabled && type == MAIN_SCREEN_TYPE && statsLabel == null,
-            sprdDecoderTuningEnabled = sprdTuning,
-        ).also { if (startImmediately) it.start() }
-    }
+        mtkDecoderTuningEnabled = mtkDecoderTuningEnabled && type == MAIN_SCREEN_TYPE && statsLabel == null,
+    ).also { if (startImmediately) it.start() }
 
     @Synchronized
     private fun audioRenderer(id: AudioStreamId, format: AudioFormat): AudioRenderer {
@@ -856,12 +839,9 @@ internal fun videoDecoderAttempts(
     softwareDecoder: String?,
     lowLatencyDecoder: String? = null,
     maximumMtkMode: MtkDecoderMode = MtkDecoderMode.NONE,
-    sprdDecoder: String? = null,
 ): List<DecoderAttempt> = buildList {
     if (operatingRate > 0) lowLatencyDecoder?.let { add(DecoderAttempt(it, tuned = true, operatingRate)) }
     lowLatencyDecoder?.let { add(DecoderAttempt(it, tuned = true)) }
-    if (operatingRate > 0) sprdDecoder?.let { add(DecoderAttempt(it, tuned = true, operatingRate)) }
-    sprdDecoder?.let { add(DecoderAttempt(it, tuned = true)) }
     val mtkModes = maximumMtkMode.attempts()
     if (operatingRate > 0) {
         mtkModes.forEach { add(DecoderAttempt(null, tuned = true, operatingRate, it)) }
@@ -939,8 +919,6 @@ private class VideoDecoder(
      */
     private val framesAtOnce: Boolean = false,
     private val mtkDecoderTuningEnabled: Boolean = false,
-    /** Try the detected Spreadtrum decoder with a tuned format first. */
-    private val sprdDecoderTuningEnabled: Boolean = false,
 ) : Closeable {
     private val pacer = FramePacer()
     private val pacingDelay = if (pacingDelayNanos > 0) PacingDelay(pacingDelayNanos) else null
@@ -1235,14 +1213,6 @@ private class VideoDecoder(
             ?: if (atOnce && !lowLatencyDecoderRefused) findLowLatencyDecoder(mime) else null
         val requestedMtkMode = if (mtkDecoderTuningEnabled &&
             MtkDecoderTuning.legacyAcodecDecoderName(mime) != null) maximumMtkMode else MtkDecoderMode.NONE
-        // With HEVC and the software HEVC decoder on (Android 10+), the named Spreadtrum
-        // attempt would run before createDecoder() and skip the user's software-decoder
-        // choice, so no attempt is requested. Mirrors the toggle hiding in DiPlayActivity.
-        val softwareHevcDecoderChosen = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
-            mime == MediaFormat.MIMETYPE_VIDEO_HEVC && preferSoftwareHevcDecoder
-        val requestedSprdDecoder = if (sprdDecoderTuningEnabled && !softwareHevcDecoderChosen) {
-            SprdDecoderTuning.selectedDecoderName(mime)
-        } else null
         var configured: ConfiguredVideoDecoder? = null
         var used: DecoderAttempt? = null
         for (attempt in videoDecoderAttempts(
@@ -1250,7 +1220,6 @@ private class VideoDecoder(
             softwareDecoderName(mime),
             requestedLowLatency,
             requestedMtkMode,
-            sprdDecoder = requestedSprdDecoder,
         )) {
             configured = tryConfigure(mime, csd, surface, attempt, atOnce)
             if (configured != null) { used = attempt; break }
@@ -1291,16 +1260,8 @@ private class VideoDecoder(
                     " mtkTuning=${configuredMtkMode.diagnosticName}"
                 else -> ""
             }
-            // The marker reports the explicit attempt, not the decoder: nothing when the
-            // toggle is off (the default first attempt is tuned too), "on" when the named
-            // Spreadtrum attempt configured the decoder, "fallback" when it was refused.
-            val sprd = when {
-                requestedSprdDecoder == null -> ""
-                used?.codecName.equals(requestedSprdDecoder, ignoreCase = true) == true -> " sprdTuning=on"
-                else -> " sprdTuning=fallback"
-            }
             report("decoder=${configured.codecName} mime=$mime size=${width}x$height" +
-                "$rate$lowLatency$output$atOnceReport$mtk$sprd")
+                "$rate$lowLatency$output$atOnceReport$mtk")
             Log.i(
                 TAG,
                 "video decoder configured name=${configured.codecName} mime=$mime size=${width}x$height$mtk",

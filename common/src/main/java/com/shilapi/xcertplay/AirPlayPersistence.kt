@@ -86,7 +86,6 @@ object AirPlayPersistence {
     private const val KEY_CALL_SPEAKERPHONE = "call_speakerphone"
     private const val KEY_SMOOTH_VIDEO = "smooth_video"
     private const val KEY_MTK_DECODER_TUNING = "mtk_decoder_tuning"
-    private const val KEY_SPRD_DECODER_TUNING = "sprd_decoder_tuning"
     private const val KEY_WEAK_DEVICE_MODE = "weak_device_mode"
     private const val KEY_WEAK_DEVICE_PREV_DISPLAY_SCALE_PERCENT = "weak_device_prev_display_scale_percent"
     private const val KEY_WEAK_DEVICE_PREV_DIRECT_VIDEO_OUTPUT = "weak_device_prev_direct_video_output"
@@ -757,15 +756,6 @@ object AirPlayPersistence {
     fun saveMtkDecoderTuning(context: Context, enabled: Boolean) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putBoolean(KEY_MTK_DECODER_TUNING, enabled).apply()
-    }
-
-    /** Spreadtrum's tuned decoder path; opt-in and applied at reconnect. */
-    fun loadSprdDecoderTuning(context: Context): Boolean =
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_SPRD_DECODER_TUNING, false)
-
-    fun saveSprdDecoderTuning(context: Context, enabled: Boolean) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putBoolean(KEY_SPRD_DECODER_TUNING, enabled).apply()
     }
 
     /** One switch for slow head units; see WeakDeviceProfile. The previous values live under their own keys. */
