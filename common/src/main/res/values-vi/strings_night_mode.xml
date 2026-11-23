@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_app_appearance">Giao diện ứng dụng</string>
+    <string name="settings_app_appearance_dark">Tối</string>
+    <string name="settings_app_appearance_light">Sáng</string>
+    <string name="settings_app_appearance_auto">Tự động</string>
+    <string name="settings_app_appearance_description">Tự động theo cài đặt ngày/đêm đã lưu của CarPlay; khi CarPlay đang mở, sẽ theo kết quả thực tế. Sáng và Tối luôn cố định và không cần kết nối lại.</string>
+    <string name="settings_switch_to_light_appearance">Chuyển sang giao diện sáng</string>
+    <string name="settings_switch_to_dark_appearance">Chuyển sang giao diện tối</string>
+</resources>
