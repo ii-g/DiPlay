@@ -123,6 +123,7 @@ internal object BluetoothPauseOutcome {
             "car Bluetooth pause failed: Android Bluetooth stayed on (app API)"
         else -> "car Bluetooth pause failed: Android Bluetooth stayed on"
     }
+}
 /**
  * What the app API did when svc gave no ADB reply; null when the shell answered.
  * (Trial build: only the app-API line is ported here; the full evidence object
@@ -138,5 +139,4 @@ object BluetoothPauseEvidence {
         BluetoothRadioRequest.Path.ADAPTER_NOT_ALLOWED -> "$PREFIX app API cannot send the Bluetooth disable on this Android"
         else -> null
     }
-}
 }
