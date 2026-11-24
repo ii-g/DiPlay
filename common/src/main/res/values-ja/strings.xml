@@ -541,7 +541,7 @@
     <string name="adb_dashboard_does_not_send_map">メーター：%1$s。iPhoneから地図映像は送信されません。</string>
     <string name="adb_not_approved">DiPlayはまだ許可されていません。「ADBへのアクセスを確認」をタップし、車の画面で許可してください。</string>
     <string name="adb_off">ネットワークADBがオフです。車載端末の開発者向けオプションでオンにしてください。</string>
-    <string name="adb_network_not_answering">USBデバッグはオンですが、ネットワークADBが応答しません。車載端末の開発者向けオプションでネットワークADBをオンにしてください。すでにオンの場合は、一度オフにしてからもう一度オンにしてください。</string>
+    <string name="adb_network_not_answering">USBデバッグはオンですが、ネットワークADBが応答しません。車載端末の開発者向けオプションでネットワークADBをオンにしてください。すでにオンの場合は、一度オフにしてからもう一度オンにしてください。この項目がない場合は、USBで接続したパソコンから「adb tcpip 5555」を実行してください。車載端末を再起動するたびに必要です。</string>
     <string name="adb_pairing_only">この車載端末ではペアリングが必要なワイヤレスデバッグだけが利用でき、DiPlayはまだ対応していません。</string>
     <string name="navi_mode_off">オフ</string>
     <string name="navi_mode_turn_on_by_navi">ナビ使用時のみオン</string>
@@ -702,6 +702,11 @@
     <string name="wheel_keys_adb_failed">ADBが使用できません：%1$s</string>
     <string name="wheel_keys_open_settings">ユーザー補助設定を開く</string>
     <string name="wheel_keys_no_settings">この車載端末にはユーザー補助設定画面がありません。ADBボタンを使用してください。</string>
+    <string name="settings_wheel_keys_restart">DiPlayを再起動してサービスを開始 · ADB</string>
+    <string name="settings_wheel_keys_restart_description">DiPlayはサービスを再び許可しましたが、Androidが起動しませんでした。車のADBでDiPlayを再起動すると解決する場合があります。CarPlayは切断されます。</string>
+    <string name="settings_wheel_keys_restart_title">DiPlayを再起動しますか？</string>
+    <string name="settings_wheel_keys_restart_message">DiPlayはいったん終了し、再び開きます。CarPlayが接続中の場合は切断されます。必ず停車中に行ってください。成功すると、DiPlayが開いてから約10秒でステアリングスイッチが使えるようになります。\n\n一度成功すると、車の始動時にDiPlayが開き、サービスが再び止まっている場合、DiPlayが同じ操作を自動で行います。始動ごとに1回、CarPlayの接続前に限ります。</string>
+    <string name="settings_wheel_keys_restart_confirm">DiPlayを再起動</string>
     <string name="wheel_zoom_behaviour">モード切替キー</string>
     <string name="wheel_zoom_behaviour_toggle">次に押すまで切り替えたまま</string>
     <string name="wheel_zoom_behaviour_timed">5秒間だけ地図を拡大・縮小</string>
@@ -811,8 +816,8 @@
     <string name="settings_direct_video_output_description">DiPlay画面内に描画せず、車載端末のコンポジターへCarPlay映像を直接送ります。画面更新1回分ほどの遅延を減らせる場合があります。画質調整は適用されません。次回の接続から反映されます。</string>
     <string name="settings_low_latency_decoder">低遅延デコード（実験的機能）</string>
     <string name="settings_low_latency_decoder_description">映像デコーダーに対し、フレームを保持せずデコード直後に出力するよう要求します。低遅延の要求自体はQualcomm製デコーダーにのみ適用されます。Spreadtrumを含む他のデコーダーでは、この設定でも専用スレッドが有効になります。専用スレッドで次のフレームの到着を待たずに表示し、数十ミリ秒の遅延を減らせる場合があります。映像が乱れたり停止したりする場合はオフにしてください。次回の接続から反映されます。</string>
-    <string name="settings_weak_device_mode">低スペックヘッドユニットモード（実験的機能）</string>
-    <string name="settings_weak_device_mode_description">低スペックヘッドユニット向けのスイッチ1つ：解像度を75%に下げ、映像の直接出力を使い、音楽のバッファ（ワイヤレス）を最も安定した値にします。オンの間は画質調整は適用されません。オフにすると、オンの間にこれらの設定に加えた変更がすべて元に戻ります。次回のCarPlay接続から反映されます。</string>
+    <string name="settings_weak_device_mode">低スペック車載端末モード（実験的機能）</string>
+    <string name="settings_weak_device_mode_description">低スペックの車載端末向けのスイッチ1つ：解像度が75%より高い場合は75%に下げ、映像の直接出力を使い、音楽のバッファ（ワイヤレス）を最も安定した値にします（音楽の再生と一時停止が遅くなります）。オンの間は画質調整は適用されません。オフにすると、オンの間にこれらの設定に加えた変更がすべて元に戻ります。次回のCarPlay接続から反映されます。</string>
     <string name="settings_fps_counter">FPSカウンター</string>
     <string name="settings_fps_counter_description">CarPlay右上に表示FPS（50以上は緑、30以上は黄、それ未満は赤）、iPhoneからの受信FPS、デコード時間を表示します。静止画面ではiPhoneが送るフレームが少ないため数値も小さくなります。</string>
     <string name="fps_counter_text">%1$d FPS\n受信 %2$d · %3$s</string>

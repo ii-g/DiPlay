@@ -668,6 +668,11 @@
     <string name="wheel_keys_adb_failed">ADB kullanılamıyor: %1$s</string>
     <string name="wheel_keys_open_settings">Erişilebilirlik ayarlarını aç</string>
     <string name="wheel_keys_no_settings">Bu ana ünitede erişilebilirlik ayarları ekranı yok. ADB düğmesini kullanın.</string>
+    <string name="settings_wheel_keys_restart">Hizmeti başlatmak için DiPlay\'i yeniden başlat · ADB</string>
+    <string name="settings_wheel_keys_restart_description">DiPlay hizmete yeniden izin verdi, ancak Android onu başlatmadı. DiPlay\'i aracın ADB\'si üzerinden yeniden başlatmak bunu düzeltebilir. CarPlay bağlantısı kesilir.</string>
+    <string name="settings_wheel_keys_restart_title">DiPlay yeniden başlatılsın mı?</string>
+    <string name="settings_wheel_keys_restart_message">DiPlay kapanır ve yeniden açılır. CarPlay bağlıysa bağlantısı kesilir. Bunu yalnızca park halindeyken yapın. İşe yararsa direksiyon tuşları, DiPlay açıldıktan yaklaşık 10 saniye sonra geri gelir.\n\nBir kez işe yaradıktan sonra, araç DiPlay\'i başlattığında hizmet yine takılmışsa DiPlay aynısını kendisi yapar: her çalıştırmada bir kez ve yalnızca CarPlay bağlanmadan önce.</string>
+    <string name="settings_wheel_keys_restart_confirm">DiPlay\'i yeniden başlat</string>
     <string name="wheel_zoom_behaviour">Mod tuşu</string>
     <string name="wheel_zoom_behaviour_toggle">tekrar basılana kadar değiştirir</string>
     <string name="wheel_zoom_behaviour_timed">5 saniye boyunca yakınlaştır</string>
@@ -775,7 +780,7 @@
     <string name="settings_low_latency_decoder">Düşük gecikmeli kod çözme (deneysel)</string>
     <string name="settings_low_latency_decoder_description">Video kod çözücülerinden sonraki kareleri tutmak yerine her kareyi kodu çözülür çözülmez çıkarmasını ister ve kodu çözülen her kareyi bir sonrakinin gelmesini beklemeden özel bir iş parçacığından gösterir. Düşük gecikme isteğinin kendisi yalnızca Qualcomm kod çözücüler için geçerlidir; Spreadtrum dahil diğer kod çözücülerde bu ayar yine de özel çıkış iş parçacığını etkinleştirir. Gecikmeyi onlarca milisaniye azaltabilir. Resimde bozulmalar varsa veya donuyorsa kapatın. Sonraki bağlantıda uygulanır.</string>
     <string name="settings_weak_device_mode">Zayıf ana ünite modu (deneysel)</string>
-    <string name="settings_weak_device_mode_description">Yavaş ana üniteler için tek anahtar: Çözünürlüğü %75\'e düşürür, Doğrudan video çıkışı kullanır ve Müzik arabelleğini (kablosuz CarPlay) en kararlı değerine ayarlar. Açıkken Görüntü ayarları geçerli değildir. Kapatmak, açıkken bu ayarlarda yapılan değişiklikleri geri alır. Sonraki CarPlay bağlantısında geçerli olur.</string>
+    <string name="settings_weak_device_mode_description">Yavaş ana üniteler için tek anahtar: Çözünürlük %75\'ten yüksekse %75\'e düşürür, Doğrudan video çıkışı kullanır ve Müzik arabelleğini (kablosuz CarPlay) en kararlı değerine ayarlar, bu yüzden müzik daha geç başlar ve duraklatılır. Açıkken Görüntü ayarları geçerli değildir. Kapatmak, açıkken bu ayarlarda yapılan değişiklikleri geri alır. Sonraki CarPlay bağlantısında geçerli olur.</string>
     <string name="settings_fps_counter">FPS sayacı</string>
     <string name="settings_fps_counter_description">CarPlay\'in sağ üst köşesinde bir sayaç gösterir: saniye başına gösterilen kareler (50\'den itibaren yeşil, 30\'dan itibaren sarı, altında kırmızı), iPhone\'dan saniyede alınan kareler ve kod çözme süresi. Hareketsiz bir ekran az sayıda kare gösterir çünkü iPhone hiç kare göndermez.</string>
     <string name="car_button_in_carplay">CarPlay\'de araç düğmesi</string>
@@ -1023,7 +1028,7 @@
     <string name="settings_hotspot_interface_description">Yalnızca erişim noktasını Android\'in Wi-Fi erişim noktası olarak bildirmediği bir ağ arayüzünde (örneğin bazı Geely, Lynk &amp; Co ve diğer Qualcomm ünitelerinde eth0.3) çalıştıran ana üniteler içindir. Otomatik bulmak için boş bırakın.</string>
     <string name="wifi_direct_refused_beside_hotspot">Araç erişim noktası açık ve Wi-Fi Direct onun yanında başlatılamıyor</string>
     <string name="connection_help_wifi_direct_beside_hotspot">Araç erişim noktasını kapatıp tekrar deneyin veya Bağlantı kurulumunda Aracın dahili erişim noktası\'nı seçip adını ve parolasını kaydedin.</string>
-    <string name="adb_network_not_answering">USB hata ayıklama açık, ancak ağ üzerinden ADB yanıt vermiyor. Ana ünitenin geliştirici seçeneklerinden ağ üzerinden ADB\'yi açın. Zaten açıksa, kapatıp tekrar açın.</string>
+    <string name="adb_network_not_answering">USB hata ayıklama açık, ancak ağ üzerinden ADB yanıt vermiyor. Ana ünitenin geliştirici seçeneklerinden ağ üzerinden ADB\'yi açın. Zaten açıksa, kapatıp tekrar açın. Böyle bir seçenek yoksa USB ile bağlı bir bilgisayardan “adb tcpip 5555” komutunu çalıştırın; ana ünite her yeniden başlatıldığında tekrarlayın.</string>
     <string name="car_hotspot_details_differ">Araç erişim noktası ayarları DiPlay\'de kayıtlı olanlardan farklı</string>
     <string name="car_sees_no_usb_device">Araç henüz herhangi bir USB cihazı görmüyor</string>
     <string name="car_sees_usb_device_not_iphone">Araç bir USB cihazı görüyor, ancak bu bir iPhone değil</string>

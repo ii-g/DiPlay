@@ -544,7 +544,7 @@
     <string name="adb_dashboard_does_not_send_map">Cụm đồng hồ: %1$s, nên iPhone không gửi bản đồ.</string>
     <string name="adb_not_approved">DiPlay chưa được chấp thuận. Nhấn Kiểm tra quyền truy cập ADB, rồi cho phép DiPlay trên màn hình xe.</string>
     <string name="adb_off">ADB qua mạng đang tắt. Hãy bật nó trong tùy chọn nhà phát triển của hệ thống giải trí.</string>
-    <string name="adb_network_not_answering">Gỡ lỗi USB đang bật, nhưng ADB qua mạng không phản hồi. Hãy bật ADB qua mạng trong tùy chọn nhà phát triển của hệ thống giải trí. Nếu đã bật, hãy tắt rồi bật lại.</string>
+    <string name="adb_network_not_answering">Gỡ lỗi USB đang bật, nhưng ADB qua mạng không phản hồi. Hãy bật ADB qua mạng trong tùy chọn nhà phát triển của hệ thống giải trí. Nếu đã bật, hãy tắt rồi bật lại. Nếu không có tùy chọn này, hãy chạy “adb tcpip 5555” từ máy tính kết nối qua USB và chạy lại sau mỗi lần hệ thống giải trí khởi động lại.</string>
     <string name="adb_pairing_only">Hệ thống giải trí này chỉ có gỡ lỗi không dây với ghép nối, mà DiPlay chưa hỗ trợ.</string>
     <string name="navi_mode_off">Tắt</string>
     <string name="navi_mode_turn_on_by_navi">Bật theo dẫn đường</string>
@@ -703,6 +703,11 @@
     <string name="wheel_keys_adb_failed">ADB không khả dụng: %1$s</string>
     <string name="wheel_keys_open_settings">Mở cài đặt hỗ trợ tiếp cận</string>
     <string name="wheel_keys_no_settings">Hệ thống giải trí này không có màn hình cài đặt hỗ trợ tiếp cận. Hãy dùng nút ADB.</string>
+    <string name="settings_wheel_keys_restart">Khởi động lại DiPlay để chạy dịch vụ · ADB</string>
+    <string name="settings_wheel_keys_restart_description">DiPlay đã cho phép lại dịch vụ, nhưng Android không khởi động nó. Khởi động lại DiPlay qua ADB của xe có thể khắc phục. CarPlay sẽ ngắt kết nối.</string>
+    <string name="settings_wheel_keys_restart_title">Khởi động lại DiPlay?</string>
+    <string name="settings_wheel_keys_restart_message">DiPlay sẽ đóng rồi mở lại. Nếu CarPlay đang kết nối, nó sẽ ngắt kết nối. Chỉ thực hiện khi đang đỗ xe. Nếu thành công, phím vô lăng hoạt động lại khoảng 10 giây sau khi DiPlay mở.\n\nSau khi đã thành công một lần, DiPlay sẽ tự làm như vậy khi xe khởi động DiPlay mà dịch vụ lại bị kẹt: một lần cho mỗi lần khởi động và chỉ trước khi CarPlay kết nối.</string>
+    <string name="settings_wheel_keys_restart_confirm">Khởi động lại DiPlay</string>
     <string name="wheel_zoom_behaviour">Phím chế độ</string>
     <string name="wheel_zoom_behaviour_toggle">chuyển đổi cho đến khi nhấn lại</string>
     <string name="wheel_zoom_behaviour_timed">thu phóng trong 5 giây</string>
@@ -809,7 +814,7 @@
     <string name="settings_low_latency_decoder">Giải mã độ trễ thấp (thử nghiệm)</string>
     <string name="settings_low_latency_decoder_description">Yêu cầu bộ giải mã video xuất từng khung hình ngay khi giải mã xong thay vì giữ lại các khung tiếp theo, và hiện từng khung đã giải mã từ một luồng xử lý riêng mà không chờ khung tiếp theo đến. Bản thân yêu cầu độ trễ thấp chỉ áp dụng cho bộ giải mã Qualcomm; với các bộ giải mã khác, kể cả Spreadtrum, tùy chọn này vẫn bật luồng xuất riêng. Có thể giảm độ trễ vài chục mili giây. Hãy tắt nếu hình ảnh bị nhiễu hoặc đứng hình. Áp dụng ở lần kết nối tiếp theo.</string>
     <string name="settings_weak_device_mode">Chế độ hệ thống giải trí yếu (thử nghiệm)</string>
-    <string name="settings_weak_device_mode_description">Một công tắc cho các hệ thống giải trí chậm: giảm Độ phân giải xuống 75%, dùng Xuất video trực tiếp và đặt Bộ đệm nhạc (CarPlay không dây) ở giá trị ổn định nhất. Trong khi bật, điều chỉnh hình ảnh không được áp dụng. Tắt sẽ hoàn tác mọi thay đổi đã thực hiện với các cài đặt đó trong khi bật. Áp dụng ở lần kết nối CarPlay tiếp theo.</string>
+    <string name="settings_weak_device_mode_description">Một công tắc cho các hệ thống giải trí chậm: giảm Độ phân giải xuống 75% nếu cao hơn, dùng Xuất video trực tiếp và đặt Bộ đệm nhạc (CarPlay không dây) ở giá trị ổn định nhất, nên nhạc sẽ bắt đầu và tạm dừng muộn hơn. Trong khi bật, điều chỉnh hình ảnh không được áp dụng. Tắt sẽ hoàn tác mọi thay đổi đã thực hiện với các cài đặt đó trong khi bật. Áp dụng ở lần kết nối CarPlay tiếp theo.</string>
     <string name="settings_fps_counter">Bộ đếm FPS</string>
     <string name="settings_fps_counter_description">Hiện bộ đếm ở góc trên bên phải của CarPlay: số khung hình hiển thị mỗi giây (xanh lá từ 50, vàng từ 30, đỏ khi thấp hơn), số khung hình nhận từ iPhone mỗi giây và thời gian giải mã. Màn hình đứng yên sẽ hiện ít khung hình vì iPhone không gửi khung nào.</string>
     <string name="car_button_in_carplay">Nút xe trong CarPlay</string>
